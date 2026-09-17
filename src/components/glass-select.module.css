@@ -3,50 +3,35 @@
   min-width: 0;
 }
 .dropdown:has([aria-expanded="true"]) {
-  z-index: 20;
+  z-index: 25;
 }
-.dropdown .trigger {
-  width: 100%;
-  min-height: 48px;
-  padding: 0 13px;
+.trigger {
   display: flex;
   align-items: center;
-  gap: 8px;
-  border: 1px solid rgba(211, 231, 255, 0.22);
-  border-radius: 15px;
-  background: linear-gradient(
-    140deg,
-    rgba(255, 255, 255, 0.14),
-    rgba(14, 79, 170, 0.18)
-  );
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.2),
-    0 8px 20px rgba(0, 18, 64, 0.18);
-  color: #f2f8ff;
-  font-size: 12px;
+  gap: 9px;
+  width: 100%;
+  min-height: 31px;
+  padding: 5px 11px;
+  border: 1px solid #29465e !important;
+  border-radius: 6px;
+  background: #142d42;
+  color: #d4e4f3;
+  font-size: 11px !important;
   text-align: left;
   cursor: pointer;
-  transition:
-    background 320ms cubic-bezier(0.22, 1, 0.36, 1),
-    border-color 320ms cubic-bezier(0.22, 1, 0.36, 1),
-    box-shadow 320ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .trigger:hover,
 .trigger[aria-expanded="true"] {
-  background: linear-gradient(
-    140deg,
-    rgba(255, 255, 255, 0.2),
-    rgba(33, 111, 208, 0.25)
-  );
+  background: #1d3a54;
+  border-color: #416886 !important;
 }
 .leading {
-  color: rgba(236, 245, 255, 0.6);
   display: flex;
-  flex-shrink: 0;
+  color: #a7c6df;
 }
 .leading svg {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
 }
 .value {
   flex: 1;
@@ -56,97 +41,71 @@
   white-space: nowrap;
 }
 .chevron {
-  width: 13px;
-  height: 13px;
+  width: 11px;
+  height: 11px;
+  color: #a3bfd7;
   flex-shrink: 0;
-  opacity: 0.7;
-  transition: transform 0.18s ease;
+  transition: transform 140ms ease;
 }
 .trigger[aria-expanded="true"] .chevron {
   transform: rotate(180deg);
 }
 .compact .trigger {
-  min-height: 34px;
-  padding: 0 9px;
-  border-radius: 10px;
-  gap: 7px;
+  padding: 6px 8px;
+  border-color: transparent !important;
+  background: transparent;
+  color: #b0cfe8;
+  font-size: 12px !important;
 }
-.compact .leading svg {
-  width: 14px;
-  height: 14px;
-}
-.compact .chevron {
-  width: 12px;
-  height: 12px;
+.compact .trigger:hover {
+  background: #18364e;
 }
 .panel {
   position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  width: max(100%, 190px);
-  padding: 6px;
-  border: 1px solid rgba(208, 232, 255, 0.38);
-  border-radius: 17px;
-  background: linear-gradient(
-    145deg,
-    rgba(76, 113, 169, 0.84),
-    rgba(13, 35, 79, 0.94)
-  );
-  backdrop-filter: blur(28px) saturate(160%);
-  -webkit-backdrop-filter: blur(28px) saturate(160%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.28),
-    0 16px 38px rgba(0, 9, 35, 0.45),
-    0 2px 6px rgba(0, 9, 35, 0.18);
+  top: calc(100% + 5px);
+  left: 0;
+  width: max(100%, 185px);
+  max-width: 280px;
+  max-height: 265px;
+  overflow-y: auto;
+  padding: 5px;
+  border: 1px solid #355873;
+  border-radius: 7px;
+  background: #142d43;
+  box-shadow: 0 15px 35px #0006;
+  z-index: 25;
 }
-.panel .option {
+.compact .panel {
+  left: auto;
+  right: 0;
+}
+.option {
   width: 100%;
-  min-height: 40px;
-  padding: 10px 12px;
+  min-height: 32px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  border-radius: 11px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 4px;
   background: transparent;
-  color: #f2f8ff;
-  font-size: 12px;
+  color: #bed6e9;
+  font-size: 11px !important;
   text-align: left;
   cursor: pointer;
-  transition:
-    background 320ms cubic-bezier(0.22, 1, 0.36, 1),
-    color 320ms cubic-bezier(0.22, 1, 0.36, 1),
-    box-shadow 320ms cubic-bezier(0.22, 1, 0.36, 1);
 }
-.panel .option[aria-selected="true"] {
-  background: rgba(130, 198, 255, 0.16);
+.option[aria-selected="true"] {
+  background: #1c4165;
   color: white;
 }
 .panel .active {
-  background: linear-gradient(
-    110deg,
-    rgba(177, 220, 255, 0.25),
-    rgba(90, 169, 255, 0.18)
-  );
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  background: #245175;
+  color: white;
 }
 .option svg {
-  width: 15px;
-  height: 15px;
-  color: #b5ecff;
+  width: 13px;
+  height: 13px;
+  color: #78bdff;
   flex-shrink: 0;
-}
-.compact .panel {
-  border-radius: 14px;
-}
-.compact .panel .option {
-  min-height: 34px;
-  padding: 8px 10px;
-}
-@media (prefers-reduced-motion: reduce) {
-  .chevron,
-  .trigger,
-  .panel .option {
-    transition: none;
-  }
 }

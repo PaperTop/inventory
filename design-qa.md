@@ -83,4 +83,24 @@ The implementation follows the reference’s dark liquid-glass language: rounded
 - [x] Small screens stack the contents panel below the open container card in CSS.
 - [ ] Capture and compare rendered desktop and narrow screenshots.
 
-final result: blocked
+Historical nested-container result: blocked
+
+## Navy workspace and space management — 2026-09-17
+
+Source: `/var/folders/wn/tkgb1mtn0s5cy93brcn7xv300000gn/T/codex-clipboard-14b1c855-b58a-48d9-84f1-71b33df55b3d.png` (1536 × 1024, six-screen reference board).
+
+Implemented the board as interactive states rather than six simultaneous screens. Compared the source and rendered desktop inventory directly. Evidence: `/private/tmp/inventory-navy-home-final.png` (1536 × 850), `/private/tmp/inventory-navy-list.png`, `/private/tmp/inventory-space-delete.png`, and `/private/tmp/inventory-spaces-mobile.png` (390 × 844).
+
+- Typography: compact system sans, restrained metadata, clear drawer and dialog headings.
+- Layout: six-column desktop inventory, compact sidebar, working list view, detail and Jarvis drawers. Home previews 17 records with a View all items action; no records removed.
+- Colors: flat navy backgrounds, subtly lighter cards, blue selected states. Removed the previous colorful wallpaper treatment.
+- Assets: consistent transparent product cutouts, contained without distortion; retained the existing cabinet asset.
+- Content: local sample inventory remains explicit. Spaces has visible Edit and Delete controls, with a destination selector and confirmation. Deletion preserves container relationships and items.
+- Responsive: inspected management cards and edit dialog at 390 × 844. Document scroll width 375 with viewport width 390; no horizontal overflow. Buttons and modal fields fit.
+- Iteration: removed duplicate Category text, reduced initial Home card count, tightened sidebar and removed duplicate saved-location navigation. Added an accessible name to the icon-only mobile Add item button.
+- Interaction verification: automated checks cover default-space rename, custom-space editing/deletion, destination selection, nested-content retention, saved-mode changes, owner isolation, invalid destinations and cross-origin rejection. Existing search/filter, grid/list and detail tests pass.
+- Browser console: no warnings or errors in the final check. Database migration tested in embedded PostgreSQL; not applied to a remote Supabase project.
+
+No outstanding P0/P1/P2 visual findings in the inspected states.
+
+final result: passed

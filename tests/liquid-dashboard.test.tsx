@@ -17,6 +17,99 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("navy workspace navigation", () => {
+  it("renames a built-in space through a visible edit control", async () => {
+    const user = userEvent.setup();
+    render(<LiquidDashboard />);
+    await user.click(screen.getByRole("button", { name: "Spaces" }));
+    await user.click(screen.getByLabelText("Actions for Bedroom"));
+    await user.click(screen.getByRole("button", { name: "Edit Bedroom" }));
+    await user.clear(screen.getByLabelText("Place name"));
+    await user.type(screen.getByLabelText("Place name"), "Office");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(screen.getByLabelText("Actions for Office")).toBeVisible();
+    expect(screen.queryByLabelText("Actions for Bedroom")).toBeNull();
+  });
+
+  it("confirms deletion and keeps nested contents in the chosen destination", async () => {
+    const user = userEvent.setup();
+    render(<LiquidDashboard />);
+    await user.click(screen.getByRole("button", { name: "Spaces" }));
+    await user.click(screen.getByLabelText("Actions for Bedroom"));
+    await user.click(screen.getByRole("button", { name: "Delete Bedroom" }));
+    await user.selectOptions(screen.getByLabelText("Move items to"), "College");
+    await user.click(screen.getByRole("button", { name: "Confirm deletion" }));
+    expect(screen.queryByRole("button", { name: "Edit Bedroom" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "All items" }));
+    await user.click(
+      screen.getByRole("button", { name: "View Travel tripod" }),
+    );
+    expect(
+      screen.getByRole("complementary", { name: "Item details" }),
+    ).toHaveTextContent("College");
+  });
+  it("opens details on selection and returns to the inventory with Escape", async () => {
+    const user = userEvent.setup();
+    render(<LiquidDashboard />);
+    expect(
+      screen.queryByRole("complementary", { name: "Item details" }),
+    ).toBeNull();
+    expect(screen.queryByRole("form", { name: "Jarvis" })).toBeNull();
+    await user.click(
+      screen.getByRole("button", { name: "View Travel tripod" }),
+    );
+    expect(screen.getByRole("textbox", { name: "Item name" })).toHaveValue(
+      "Travel tripod",
+    );
+    await user.keyboard("{Escape}");
+    expect(
+      screen.queryByRole("complementary", { name: "Item details" }),
+    ).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "View Travel tripod" }),
+    ).toHaveFocus();
+  });
+
+  it("filters the inventory by category and preserves the filter in the table", async () => {
+    const user = userEvent.setup();
+    render(<LiquidDashboard />);
+    await user.click(screen.getByRole("combobox", { name: "Category" }));
+    await user.click(screen.getByRole("option", { name: "Electronics" }));
+    expect(screen.getByRole("button", { name: "View Laptop" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "View Sneakers" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "List view" }));
+    const table = screen.getByRole("table");
+    expect(
+      within(table).getByRole("columnheader", { name: "Container" }),
+    ).toBeVisible();
+    expect(
+      within(table).getByRole("button", { name: "View Laptop" }),
+    ).toBeVisible();
+    expect(
+      within(table).queryByRole("button", { name: "View Sneakers" }),
+    ).toBeNull();
+  });
+
+  it("opens a search suggestion in Jarvis without sending it automatically", async () => {
+    const user = userEvent.setup();
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+    render(<LiquidDashboard />);
+    await user.type(
+      screen.getByRole("textbox", { name: "Search items" }),
+      "camera",
+    );
+    expect(screen.getByRole("table")).toBeVisible();
+    await user.click(
+      screen.getByRole("button", { name: "Where are my camera accessories?" }),
+    );
+    expect(screen.getByRole("textbox", { name: "Ask Jarvis" })).toHaveValue(
+      "Where are my camera accessories?",
+    );
+    expect(fetch).not.toHaveBeenCalled();
+  });
+});
+
 describe("liquid dashboard interactions", () => {
   it("adds and edits items from Jarvis and shows the applied records", async () => {
     const user = userEvent.setup();
@@ -53,6 +146,7 @@ describe("liquid dashboard interactions", () => {
       };
     });
     render(<LiquidDashboard />);
+    await user.click(screen.getByRole("button", { name: "Open Jarvis" }));
     const chat = screen.getByRole("form", { name: "Jarvis" });
     await user.type(
       within(chat).getByRole("textbox"),
@@ -71,6 +165,10 @@ describe("liquid dashboard interactions", () => {
     expect(screen.getByRole("textbox", { name: "Category" })).toHaveValue(
       "Camping",
     );
+    await user.click(
+      screen.getByRole("button", { name: "Close item details" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Open Jarvis" }));
     await user.type(
       within(chat).getByRole("textbox"),
       "Rename my backpack to Hiking backpack and tag it camping",
@@ -105,6 +203,7 @@ describe("liquid dashboard interactions", () => {
       }),
     }));
     render(<LiquidDashboard />);
+    await user.click(screen.getByRole("button", { name: "Open Jarvis" }));
     const chat = screen.getByRole("form", { name: "Jarvis" });
     await user.type(
       within(chat).getByRole("textbox"),
@@ -126,13 +225,14 @@ describe("liquid dashboard interactions", () => {
   it("closes item details while keeping Jarvis available and reopens on item selection", async () => {
     const user = userEvent.setup();
     render(<LiquidDashboard />);
+    await user.click(screen.getByRole("button", { name: "View Backpack" }));
     await user.click(
       screen.getByRole("button", { name: "Close item details" }),
     );
     expect(
       screen.queryByRole("complementary", { name: "Item details" }),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole("form", { name: "Jarvis" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Open Jarvis" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "View Laptop" }));
     expect(
       screen.getByRole("complementary", { name: "Item details" }),
@@ -176,6 +276,7 @@ describe("liquid dashboard interactions", () => {
       };
     });
     render(<LiquidDashboard />);
+    await user.click(screen.getByRole("button", { name: "Open Jarvis" }));
     await user.type(
       screen.getByRole("textbox", { name: "Ask Jarvis" }),
       "Where is my telescope?",
@@ -195,6 +296,7 @@ describe("liquid dashboard interactions", () => {
       json: async () => ({ error: "Please sign in" }),
     }));
     render(<LiquidDashboard />);
+    await user.click(screen.getByRole("button", { name: "Open Jarvis" }));
     await user.click(
       within(
         screen.getByRole("navigation", { name: "Inventory locations" }),
@@ -215,6 +317,7 @@ describe("liquid dashboard interactions", () => {
       throw new Error("offline");
     });
     render(<LiquidDashboard />);
+    await user.click(screen.getByRole("button", { name: "Open Jarvis" }));
     const chat = screen.getByRole("form", { name: "Jarvis" });
     await user.type(
       within(chat).getByRole("textbox"),
@@ -229,6 +332,10 @@ describe("liquid dashboard interactions", () => {
     expect(screen.getByRole("textbox", { name: "Item name" })).toHaveValue(
       "Camera",
     );
+    await user.click(
+      screen.getByRole("button", { name: "Close item details" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Open Jarvis" }));
     await user.type(within(chat).getByRole("textbox"), "Pack me for camping");
     await user.click(
       within(chat).getByRole("button", { name: "Send question" }),
@@ -245,6 +352,7 @@ describe("liquid dashboard interactions", () => {
   it("adds trimmed tags with Enter or the add button and ignores duplicates", async () => {
     const user = userEvent.setup();
     render(<LiquidDashboard />);
+    await user.click(screen.getByRole("button", { name: "View Backpack" }));
     const input = screen.getByRole("textbox", { name: "New tag" });
     await user.type(input, "  camping  {Enter}");
     expect(screen.getByRole("button", { name: "camping" })).toBeVisible();
@@ -267,6 +375,7 @@ describe("liquid dashboard interactions", () => {
   it("shows past tags when focusing tag input and allows adding via suggestion or custom input", async () => {
     const user = userEvent.setup();
     render(<LiquidDashboard />);
+    await user.click(screen.getByRole("button", { name: "View Backpack" }));
     const input = screen.getByRole("textbox", { name: "New tag" });
 
     // Focus tag input to open past tags popover
@@ -293,7 +402,10 @@ describe("liquid dashboard interactions", () => {
     const user = userEvent.setup();
     render(<LiquidDashboard />);
     await user.click(screen.getByRole("button", { name: "Add place" }));
-    const dialog = screen.getByRole("dialog", { name: "Add a place" });
+    const dialog = screen.getByRole("dialog", { name: "Add space" });
+    await user.click(
+      within(dialog).getByRole("button", { name: "Change icon" }),
+    );
     await user.type(within(dialog).getByLabelText("Place name"), "Studio");
     await user.click(within(dialog).getByRole("radio", { name: "Camera" }));
     await user.click(within(dialog).getByRole("radio", { name: "Rose" }));
@@ -312,6 +424,7 @@ describe("liquid dashboard interactions", () => {
   it("supports keyboard selection and dismissing the glass filter", async () => {
     const user = userEvent.setup();
     render(<LiquidDashboard />);
+    await user.click(screen.getByRole("button", { name: "More filters" }));
     const filter = screen.getByRole("combobox", { name: "Filter items" });
     filter.focus();
     await user.keyboard("{ArrowDown}{End}{Enter}");
@@ -330,6 +443,7 @@ describe("liquid dashboard interactions", () => {
   it("edits notes directly and deletes the selected item", async () => {
     const user = userEvent.setup();
     render(<LiquidDashboard />);
+    await user.click(screen.getByRole("button", { name: "View Backpack" }));
     const notes = screen.getByRole("textbox", { name: "Notes" });
     expect(notes).toBeEnabled();
     await user.clear(notes);
@@ -340,7 +454,11 @@ describe("liquid dashboard interactions", () => {
       "Packed for tomorrow.",
     );
     for (const name of ["Delete", "Duplicate", "Favorite", "Missing"]) {
-      expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
+      expect(
+        within(
+          screen.getByRole("complementary", { name: "Item details" }),
+        ).queryByRole("button", { name }),
+      ).not.toBeInTheDocument();
     }
     await user.click(screen.getByRole("button", { name: "Delete item" }));
     expect(
@@ -351,6 +469,7 @@ describe("liquid dashboard interactions", () => {
   it("starts item editing when a detail field is clicked", async () => {
     const user = userEvent.setup();
     render(<LiquidDashboard />);
+    await user.click(screen.getByRole("button", { name: "View Backpack" }));
 
     const category = screen.getByRole("textbox", { name: "Category" });
     await user.click(category);
@@ -363,6 +482,7 @@ describe("liquid dashboard interactions", () => {
   it("replaces only the selected item's photo", async () => {
     const user = userEvent.setup();
     render(<LiquidDashboard />);
+    await user.click(screen.getByRole("button", { name: "View Backpack" }));
     const file = new File(["photo"], "backpack.png", { type: "image/png" });
     await user.upload(screen.getByLabelText("Upload item photo"), file);
     await waitFor(() =>
@@ -385,6 +505,7 @@ describe("liquid dashboard interactions", () => {
   it("rejects unsupported and oversized photos without replacing the image", async () => {
     const user = userEvent.setup({ applyAccept: false });
     render(<LiquidDashboard />);
+    await user.click(screen.getByRole("button", { name: "View Backpack" }));
     const original = screen
       .getByRole("img", { name: "Backpack" })
       .getAttribute("src");
@@ -429,6 +550,7 @@ describe("liquid dashboard interactions", () => {
     expect(
       screen.queryByRole("button", { name: "View New item" }),
     ).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "View Backpack" }));
     await user.click(screen.getByRole("combobox", { name: "Item location" }));
     await user.click(screen.getByRole("option", { name: "Garage" }));
     await user.click(
@@ -481,7 +603,10 @@ describe("liquid dashboard interactions", () => {
     await user.dblClick(
       within(navigation).getByRole("button", { name: "Studio" }),
     );
-    const dialog = screen.getByRole("dialog", { name: "Edit place" });
+    const dialog = screen.getByRole("dialog", { name: "Edit space" });
+    await user.click(
+      within(dialog).getByRole("button", { name: "Change icon" }),
+    );
     const name = within(dialog).getByRole("textbox", { name: "Place name" });
     await user.clear(name);
     await user.type(name, "Workshop");
@@ -516,17 +641,21 @@ describe("liquid dashboard interactions", () => {
       within(navigation).getByRole("button", { name: "Studio" }),
     );
     await user.click(screen.getByRole("button", { name: "Delete place" }));
+    await user.click(screen.getByRole("button", { name: "Confirm deletion" }));
 
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(
       within(navigation).queryByRole("button", { name: "Studio" }),
     ).not.toBeInTheDocument();
-    expect(screen.getByText("All spaces")).toBeVisible();
+    expect(
+      screen.getByRole("navigation", { name: "Inventory breadcrumb" }),
+    ).toHaveTextContent("Home");
   });
 
   it("keeps an active item filter clearable when responsive controls reflow", async () => {
     const user = userEvent.setup();
     render(<LiquidDashboard />);
+    await user.click(screen.getByRole("button", { name: "More filters" }));
 
     await user.click(screen.getByRole("combobox", { name: "Filter items" }));
     await user.click(screen.getByRole("option", { name: "Low stock" }));
@@ -547,6 +676,7 @@ describe("liquid dashboard interactions", () => {
   it("rejects a blank item name and keeps the saved item named", async () => {
     const user = userEvent.setup();
     render(<LiquidDashboard />);
+    await user.click(screen.getByRole("button", { name: "View Backpack" }));
 
     const name = screen.getByRole("textbox", { name: "Item name" });
     await user.click(name);
@@ -560,9 +690,10 @@ describe("liquid dashboard interactions", () => {
     expect(screen.getByRole("button", { name: "View Backpack" })).toBeVisible();
   });
 
-  it("saves an item name on Enter without editor action buttons", async () => {
+  it("saves an item name on Enter and returns to view mode", async () => {
     const user = userEvent.setup();
     render(<LiquidDashboard />);
+    await user.click(screen.getByRole("button", { name: "View Backpack" }));
     const name = screen.getByRole("textbox", { name: "Item name" });
     await user.click(name);
     await user.clear(name);
@@ -571,13 +702,14 @@ describe("liquid dashboard interactions", () => {
       screen.getByRole("button", { name: "View Travel bag" }),
     ).toBeVisible();
     expect(
-      screen.queryByRole("button", { name: /^(Edit|Move|Done)$/ }),
+      screen.queryByRole("button", { name: /^(Move|Done)$/ }),
     ).not.toBeInTheDocument();
   });
 
   it("changes a durable item's quantity and prevents negative quantities", async () => {
     const user = userEvent.setup();
     render(<LiquidDashboard />);
+    await user.click(screen.getByRole("button", { name: "View Backpack" }));
 
     const decrease = screen.getByRole("button", { name: "Decrease quantity" });
     const increase = screen.getByRole("button", { name: "Increase quantity" });
@@ -627,6 +759,7 @@ describe("liquid dashboard interactions", () => {
   it("uses a glass control for the item location dropdown", async () => {
     const user = userEvent.setup();
     render(<LiquidDashboard />);
+    await user.click(screen.getByRole("button", { name: "View Backpack" }));
 
     const location = screen.getByRole("combobox", { name: "Item location" });
     expect(location.tagName).toBe("BUTTON");
@@ -643,8 +776,10 @@ describe("liquid dashboard interactions", () => {
     expect(location).toHaveTextContent("Home");
   });
 
-  it("exposes accessible duplicate and delete icon buttons", () => {
+  it("exposes accessible duplicate and delete icon buttons", async () => {
+    const user = userEvent.setup();
     render(<LiquidDashboard />);
+    await user.click(screen.getByRole("button", { name: "View Backpack" }));
 
     expect(
       screen.getByRole("button", { name: "Duplicate item" }),
@@ -655,6 +790,7 @@ describe("liquid dashboard interactions", () => {
   it("opens nested container contents with an inherited breadcrumb", async () => {
     const user = userEvent.setup();
     render(<LiquidDashboard />);
+    await user.click(screen.getByRole("button", { name: "Spaces" }));
 
     await user.click(screen.getByRole("button", { name: "Open Cabinet" }));
     const cabinet = screen.getByRole("region", { name: "Cabinet contents" });
@@ -666,7 +802,9 @@ describe("liquid dashboard interactions", () => {
     expect(
       screen.getByRole("region", { name: "Drawer contents" }),
     ).toBeVisible();
-    expect(screen.getByText("Bedroom → Cabinet → Drawer")).toBeVisible();
+    expect(
+      screen.getByRole("navigation", { name: "Inventory breadcrumb" }),
+    ).toHaveTextContent("HomeBedroomCabinetDrawer");
     expect(
       within(screen.getByRole("region", { name: "Drawer contents" })).getByRole(
         "button",
@@ -687,6 +825,10 @@ describe("liquid dashboard interactions", () => {
     await user.click(screen.getByRole("option", { name: "Bedroom → Cabinet" }));
 
     expect(destination).toHaveTextContent("Bedroom → Cabinet");
+    await user.click(
+      screen.getByRole("button", { name: "Close item details" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Spaces" }));
     await user.click(screen.getByRole("button", { name: "Open Cabinet" }));
     expect(
       within(
@@ -698,6 +840,7 @@ describe("liquid dashboard interactions", () => {
   it("creates a nested container from an open container", async () => {
     const user = userEvent.setup();
     render(<LiquidDashboard />);
+    await user.click(screen.getByRole("button", { name: "Spaces" }));
 
     await user.click(screen.getByRole("button", { name: "Open Cabinet" }));
     const cabinet = screen.getByRole("region", { name: "Cabinet contents" });

@@ -1,5 +1,5 @@
-import { LiquidDashboard } from "@/components/liquid-dashboard";
+import { InventoryApp } from "@/components/inventory-app";
 
 export default function Home() {
-  return <LiquidDashboard />;
+  return <InventoryApp />;
 }

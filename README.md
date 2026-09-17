@@ -66,7 +66,7 @@ The original design and implementation checklist are in `docs/superpowers/`.
 ### Option A: Hosted Supabase
 
 1. Create a Supabase project.
-2. Open its SQL editor and run `supabase/migrations/202609130001_inventory.sql`, `supabase/migrations/202609140001_containers.sql`, then `supabase/migrations/202609160001_private_photos.sql` on a new database. On an existing Inventory database, apply only migrations not already applied. Or use the CLI workflow below.
+2. Open its SQL editor and apply all files in `supabase/migrations/` in filename order, including `202609170001_space_management.sql` for safe space deletion and moving contents. On an existing Inventory database, apply only migrations not already applied. Or use the CLI workflow below.
 3. Copy `.env.example` to `.env.local` and populate `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` from the project's API settings. A legacy anon key also works in the publishable-key variable. **Do not use a service-role or secret key.**
 4. In **Authentication → URL Configuration**, set Site URL to `http://localhost:3000` for development. Add `http://localhost:3000/auth/confirm` to allowed redirects. Use the same hostname consistently, including `127.0.0.1` if you choose it.
 5. With email confirmation enabled, edit the **Confirm signup** email template to use this link:
@@ -77,7 +77,7 @@ The original design and implementation checklist are in `docs/superpowers/`.
 >
 ```
 
-6. Restart `npm run dev` after configuration. The dashboard uses the authenticated session for saved inventory; signup/login remains a separate account-flow concern, so use the integration smoke command below with a disposable confirmed Supabase account when verifying the backend. Supabase controls its password policy and Auth rate limits.
+6. Restart `npm run dev` after configuration. Click **Sign in → Create an account**, confirm your email, and sign in. New accounts start with an empty inventory; create a place, then add your first item. Sign out returns to the sample inventory. Loading failures offer a retry without substituting samples. Supabase controls its password policy and Auth rate limits.
 
 Confirmation redirects are fixed to the app root; arbitrary redirect URLs are not accepted. Password reset/social login are outside this MVP.
 
@@ -112,7 +112,7 @@ Supabase Studio: http://localhost:54323. The API and dashboard use Supabase for 
 
 Signed-in users can upload JPG, PNG, or WebP photos up to 5 MB. Files go directly to the private `inventory-photos` Supabase bucket with an opaque, owner-specific path. The existing version-checked item update saves that path in `attributes.image_path`, so photos return after reloading or signing in on another device. Sample inventory keeps its photos in memory and labels them session-only.
 
-Apply `supabase/migrations/202609160001_private_photos.sql` after the inventory and container migrations. It creates the private bucket, restricts file size/formats, and adds owner-only read/upload/delete policies. No extra environment variables or service-role key are required. The existing signed-in Supabase session is required; account screens remain separate work.
+Apply `supabase/migrations/202609160001_private_photos.sql` after the inventory and container migrations. It creates the private bucket, restricts file size/formats, and adds owner-only read/upload/delete policies. No extra environment variables or service-role key are required. Sign in through the dashboard to upload photos to your account.
 
 The app checks ownership through `/api/items/:id/photo` and redirects to a 60-second signed URL. Treat a signed URL as temporary access to that image. Photo components bypass Next.js image optimization so authentication cookies reach the reader; the reader response is private and uncached. The stored item contains an object path, never an expiring URL. The upload pattern follows [Supabase Storage access control](https://supabase.com/docs/guides/storage/security/access-control) and [standard uploads](https://supabase.com/docs/guides/storage/uploads/standard-uploads).
 

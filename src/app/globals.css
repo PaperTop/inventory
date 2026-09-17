@@ -9,7 +9,7 @@
 html {
   min-width: 320px;
   min-height: 100%;
-  background: #071943;
+  background: #061722;
 }
 
 body {
@@ -53,9 +53,7 @@ p {
   min-height: 100vh;
   place-items: center;
   padding: 24px;
-  background:
-    linear-gradient(135deg, rgb(2 13 46 / 40%), rgb(76 7 62 / 45%)),
-    url("/inventory-assets/liquid-background.png") center / cover fixed;
+  background: #061722;
   color: #fff;
   font-family: Arial, Helvetica, sans-serif;
 }

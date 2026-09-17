@@ -8,6 +8,7 @@ import {
   useState,
   type CSSProperties,
   type FormEvent,
+  type ReactNode,
 } from "react";
 import {
   Archive,
@@ -32,12 +33,27 @@ import {
   Star,
   SquaresFour,
   Tag,
+  CaretRight,
+  CaretDown,
+  GearSix,
+  AirplaneTilt,
+  Sparkle,
+  X,
+  PencilSimple,
+  CalendarBlank,
+  Clock,
+  CheckCircle,
+  Bed,
+  Bathtub,
+  CookingPot,
+  Armchair,
 } from "@phosphor-icons/react";
 import type { Icon } from "@phosphor-icons/react";
 import type { Item, Location } from "@/lib/inventory";
-import { containerDestinations } from "@/lib/containers";
+import { ancestors, containerDestinations } from "@/lib/containers";
 import { apiRepository } from "@/lib/browser-api";
 import { validatePhotoFile } from "@/lib/photos";
+import type { SavedInventory } from "./inventory-app";
 import {
   duplicateInventoryItem,
   filterInventory,
@@ -45,6 +61,7 @@ import {
 } from "@/lib/presentation";
 import styles from "./liquid-dashboard.module.css";
 import { ContainerGrid } from "./container-grid";
+import { SpacesBrowser } from "./spaces-browser";
 import { JarvisChat } from "./jarvis-chat";
 import { GlassSelect } from "./glass-select";
 import {
@@ -55,10 +72,6 @@ import {
 
 const owner = "11111111-1111-4111-8111-111111111111";
 const baseDate = "2026-09-14T07:24:00.000Z";
-const persistenceAvailable = Boolean(
-  process.env.NEXT_PUBLIC_SUPABASE_URL &&
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
-);
 
 const seedItems: VisualItem[] = [
   {
@@ -67,7 +80,7 @@ const seedItems: VisualItem[] = [
     name: "Backpack",
     kind: "durable",
     description: "Main backpack for school and travel. Fits a 15-inch laptop.",
-    category: "Everyday carry",
+    category: "Bags",
     quantity: 1,
     unit: "pc",
     reorder_threshold: null,
@@ -292,7 +305,7 @@ const seedItems: VisualItem[] = [
     version: 1,
     created_at: "2026-09-03T08:00:00.000Z",
     updated_at: "2026-09-07T12:00:00.000Z",
-    image: "/inventory-assets/item.svg",
+    image: "/inventory-assets/contact-lenses.png",
   },
 ];
 
@@ -339,7 +352,7 @@ const seedContainers: VisualItem[] = [
     version: 1,
     created_at: baseDate,
     updated_at: baseDate,
-    image: "/inventory-assets/container.svg",
+    image: "/inventory-assets/drawer.png",
   },
 ];
 
@@ -347,27 +360,113 @@ const seedAccessories: VisualItem[] = [
   {
     id: "tripod",
     name: "Travel tripod",
+    image: "/inventory-assets/tripod.png",
+    category: "Camera accessories",
     description:
       "Compact tripod for steady camera shots. Check the mount before use.",
   },
   {
     id: "sd-card",
     name: "SD memory card",
+    image: "/inventory-assets/sd-card.png",
+    category: "Electronics",
     description:
       "Spare 64 GB SD card for photography. Check camera compatibility.",
+  },
+  {
+    id: "camera-lens",
+    name: "CRT lens",
+    category: "Electronics",
+    image: "/inventory-assets/lens.png",
+    description: "A compact prime lens for everyday photography.",
+  },
+  {
+    id: "camera-battery",
+    name: "Camera battery",
+    category: "Electronics",
+    image: "/inventory-assets/battery.png",
+    description: "A charged spare battery for long days of shooting.",
+  },
+  {
+    id: "lens-cleaner",
+    name: "Lens cleaner",
+    category: "Cleaning",
+    image: "/inventory-assets/blower.png",
+    description: "A soft air blower for removing dust from lenses.",
+  },
+  {
+    id: "charging-cable",
+    name: "Charging cable",
+    category: "Electronics",
+    image: "/inventory-assets/cable.png",
+    description: "USB-C cable for charging camera gear on the go.",
+  },
+  {
+    id: "sunglasses",
+    name: "Sunglasses",
+    category: "Accessories",
+    image: "/inventory-assets/sunglasses.png",
+    description: "Everyday sunglasses with UV protection.",
+  },
+  {
+    id: "cleaning-cloth",
+    name: "Cleaning cloth",
+    category: "Cleaning",
+    image: "/inventory-assets/cloth.png",
+    description: "Microfiber cloth for keeping screens and lenses clean.",
+  },
+  {
+    id: "memory-case",
+    name: "Memory card case",
+    category: "Accessories",
+    image: "/inventory-assets/memory-case.png",
+    description: "Protective case for memory cards and adapters.",
   },
 ].map((accessory) => ({
   ...seedItems[0],
   ...accessory,
-  category: "Camera accessories",
   location_name: "Bedroom",
   parent_container_id: "drawer",
   tags: ["photography", "camera accessories"],
   attributes: {},
-  image: "/inventory-assets/item.svg",
+  updated_at: accessory.id === "tripod" ? "2026-09-15T10:00:00.000Z" : baseDate,
 }));
 
-const initialItems = [...seedItems, ...seedContainers, ...seedAccessories];
+const displayOrder = [
+  "tripod",
+  "camera-lens",
+  "backpack",
+  "laptop",
+  "water-bottle",
+  "headphones",
+  "sneakers",
+  "hoodie",
+  "notebook",
+  "wallet",
+  "umbrella",
+  "camera",
+  "camera-battery",
+  "sd-card",
+  "lens-cleaner",
+  "charging-cable",
+  "sunglasses",
+  "cleaning-cloth",
+  "memory-case",
+  "contact-lenses",
+];
+const initialItems = [...seedItems, ...seedContainers, ...seedAccessories].map(
+  (item) => {
+    const index = displayOrder.indexOf(item.id);
+    return index < 0
+      ? item
+      : {
+          ...item,
+          updated_at: new Date(
+            Date.UTC(2026, 8, 14, 12) - index * 3_600_000,
+          ).toISOString(),
+        };
+  },
+);
 
 const navItems = [
   {
@@ -396,7 +495,15 @@ const navItems = [
   },
 ] as const;
 
-const initialLocationOptions = ["Home", "Bedroom", "College", "Car"] as const;
+const initialLocationOptions = [
+  "Home",
+  "Bedroom",
+  "Bathroom",
+  "Kitchen",
+  "Living Room",
+  "College",
+  "Car",
+] as const;
 
 const placeIconOptions = [
   { value: "MapPin", label: "Pin", Icon: MapPin },
@@ -404,6 +511,13 @@ const placeIconOptions = [
   { value: "Briefcase", label: "Briefcase", Icon: Briefcase },
   { value: "Archive", label: "Archive", Icon: Archive },
   { value: "Garage", label: "Garage", Icon: Garage },
+  { value: "Bed", label: "Bedroom", Icon: Bed },
+  { value: "Bathtub", label: "Bathroom", Icon: Bathtub },
+  { value: "CookingPot", label: "Kitchen", Icon: CookingPot },
+  { value: "Armchair", label: "Living room", Icon: Armchair },
+  { value: "House", label: "Home", Icon: House },
+  { value: "Buildings", label: "College", Icon: Buildings },
+  { value: "CarProfile", label: "Car", Icon: CarProfile },
 ] as const;
 
 const placeColorOptions = [
@@ -426,13 +540,29 @@ function now() {
   return new Date().toISOString();
 }
 
-export function LiquidDashboard() {
-  const [storageMode, setStorageMode] = useState<
-    "sample" | "loading" | "saved"
-  >(persistenceAvailable ? "loading" : "sample");
-  const [locations, setLocations] = useState<Location[]>([]);
+function defaultPlace(name: string): Place {
+  const option =
+    placeIconOptions.find(
+      (option) => option.label.toLowerCase() === name.toLowerCase(),
+    ) ?? placeIconOptions[0];
+  return { name, icon: option.value, Icon: option.Icon, color: "#85bce8" };
+}
+
+export function LiquidDashboard({
+  savedInventory,
+  accountControls,
+  accountEmail,
+}: {
+  savedInventory?: SavedInventory;
+  accountControls?: ReactNode;
+  accountEmail?: string;
+} = {}) {
+  const storageMode = savedInventory ? "saved" : "sample";
+  const [locations, setLocations] = useState<Location[]>(
+    savedInventory?.locations ?? [],
+  );
   const store = useInventoryStore(
-    initialItems,
+    savedInventory?.items.map(visualItem) ?? initialItems,
     locations,
     storageMode === "saved",
   );
@@ -444,14 +574,17 @@ export function LiquidDashboard() {
     remove: removeItem,
     error: storeError,
   } = store;
-  const storeRef = useRef(store);
-  const [loadingError, setLoadingError] = useState("");
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [photoError, setPhotoError] = useState<{
     itemId: string;
     message: string;
   } | null>(null);
-  const [places, setPlaces] = useState<Place[]>([]);
+  const [places, setPlaces] = useState<Place[]>(() =>
+    initialLocationOptions.map(defaultPlace),
+  );
+  const [deletingPlace, setDeletingPlace] = useState(false);
+  const [moveDestination, setMoveDestination] = useState("");
+  const [savingPlace, setSavingPlace] = useState(false);
   const [addingPlace, setAddingPlace] = useState(false);
   const [placeName, setPlaceName] = useState("");
   const [placeError, setPlaceError] = useState("");
@@ -462,36 +595,60 @@ export function LiquidDashboard() {
   const locationOptions =
     storageMode === "saved"
       ? locations.map((location) => location.name)
-      : [...initialLocationOptions, ...places.map((place) => place.name)];
+      : places.map((place) => place.name);
+  const managedPlaces: Place[] =
+    storageMode === "saved"
+      ? locations.map((place) => defaultPlace(place.name))
+      : places;
   const navigation = [
-    ...navItems,
+    navItems[0],
     ...(storageMode === "saved"
-      ? locations
-          .filter(
-            (location) =>
-              !navItems.some((item) => item.label === location.name),
-          )
-          .map((location) => ({
-            label: location.name,
-            value: location.name,
-            Icon: MapPin,
-            color: undefined,
-            icon: undefined,
-            place: undefined,
-          }))
+      ? locations.map((location) => ({
+          label: location.name,
+          value: location.name,
+          Icon: MapPin,
+          color: undefined,
+          icon: undefined,
+          place: undefined,
+        }))
       : []),
-    ...places.map((place) => ({
-      label: place.name,
-      value: place.name,
-      Icon: place.Icon,
-      color: place.color,
-      icon: place.icon,
-      place,
-    })),
+    ...places
+      .filter(
+        (place) =>
+          !["Home", "Bedroom", "Bathroom", "Kitchen", "Living Room"].includes(
+            place.name,
+          ),
+      )
+      .map((place) => ({
+        label: place.name,
+        value: place.name,
+        Icon: place.Icon,
+        color: place.color,
+        icon: place.icon,
+        place,
+      })),
   ];
   const [selectedId, setSelectedId] = useState(seedItems[0].id);
-  const [detailsOpen, setDetailsOpen] = useState(true);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [mobileNav, setMobileNav] = useState(false);
+  const [section, setSection] = useState("Home");
+  const [iconChoicesOpen, setIconChoicesOpen] = useState(false);
+  const [category, setCategory] = useState("all");
+  const [status, setStatus] = useState("all");
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [openedContainer, setOpenedContainer] = useState<string | null>(null);
+  const spacesLanding = section === "Spaces" && !openedContainer;
+  const [tagFilter, setTagFilter] = useState("");
+  const searchInput = useRef<HTMLInputElement>(null);
+  const detailRef = useRef<HTMLElement>(null);
+  const chatRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
+  const [searchTab, setSearchTab] = useState("All results");
+  const [promptRequest, setPromptRequest] = useState<{
+    text: string;
+    id: number;
+  }>();
   const [kind, setKind] = useState<InventoryViewOptions["kind"]>("all");
   const [location, setLocation] = useState("all");
   const [sort, setSort] = useState<InventoryViewOptions["sort"]>("recent");
@@ -504,43 +661,33 @@ export function LiquidDashboard() {
   const [knownTags, setKnownTags] = useState<string[]>([]);
   const tagFormRef = useRef<HTMLFormElement>(null);
   const [notice, setNotice] = useState(
-    persistenceAvailable
-      ? "Loading saved inventory…"
-      : "Sample inventory is ready",
+    savedInventory ? "Saved inventory ready" : "Sample inventory is ready",
   );
 
-  useEffect(() => {
-    if (!persistenceAvailable) return;
-    let cancelled = false;
-    Promise.all([apiRepository.list(""), apiRepository.locations()])
-      .then(([rows, loadedLocations]) => {
-        if (cancelled) return;
-        setLocations(loadedLocations);
-        storeRef.current.load(rows.map(visualItem));
-        setStorageMode("saved");
-        setNotice("Saved inventory ready");
-      })
-      .catch((error: unknown) => {
-        if (cancelled) return;
-        setLoadingError(
-          error instanceof Error
-            ? `${error.message} Showing sample inventory.`
-            : "Saved inventory is unavailable. Showing sample inventory.",
-        );
-        setStorageMode("sample");
-        setNotice("Sample inventory is ready");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   const filtered = useMemo(
-    () => filterInventory(items, { query, kind, location, sort }),
-    [items, kind, location, query, sort],
+    () =>
+      filterInventory(items, { query, kind, location, sort }).filter(
+        (item) =>
+          (category === "all" || item.category === category) &&
+          (status === "all" || item.status === status) &&
+          (section !== "Favorites" || item.tags.includes("favorite")) &&
+          (section !== "Missing" || item.status === "lost") &&
+          (!tagFilter || item.tags.includes(tagFilter)),
+      ),
+    [items, kind, location, query, sort, category, status, section, tagFilter],
   );
   const selected =
     items.find((item) => item.id === selectedId) ?? items[0] ?? null;
+  const previewHome =
+    section === "Home" &&
+    view === "grid" &&
+    !query &&
+    kind === "all" &&
+    category === "all" &&
+    status === "all";
+  const visibleItems = previewHome
+    ? filtered.filter((item) => item.kind !== "container").slice(0, 17)
+    : filtered;
   const placementOptions = [
     ...[...new Set(locationOptions)].map((name) => ({
       value: `location:${name}`,
@@ -555,9 +702,95 @@ export function LiquidDashboard() {
     ? `container:${selected.parent_container_id}`
     : `location:${selected?.location_name ?? locationOptions[0] ?? "Unassigned"}`;
 
+  const currentContainer = items.find((item) => item.id === openedContainer);
+  const containerChain = currentContainer
+    ? [...ancestors(currentContainer, items), currentContainer]
+    : [];
+  const categories = [
+    ...new Set(
+      items
+        .filter((item) => item.kind !== "container")
+        .map((item) => item.category),
+    ),
+  ]
+    .filter(Boolean)
+    .sort();
+  const relatedItems = selected
+    ? items
+        .filter(
+          (item) =>
+            item.id !== selected.id &&
+            item.kind !== "container" &&
+            (item.category === selected.category ||
+              item.tags.some((tag) => selected.tags.includes(tag))),
+        )
+        .slice(0, 4)
+    : [];
+
+  function navigate(label: string, place = "all") {
+    setSection(label);
+    setLocation(place);
+    setOpenedContainer(null);
+    setCategory("all");
+    setStatus("all");
+    setTagFilter("");
+    setQuery("");
+    setKind(label === "Spaces" ? "container" : "all");
+    if (label === "All items") setView("list");
+    if (label === "Home" || label === "Spaces") setView("grid");
+    setMobileNav(false);
+  }
+
+  useEffect(() => {
+    const key = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        searchInput.current?.focus();
+      }
+      if (event.key === "Escape") {
+        setDetailsOpen(false);
+        setChatOpen(false);
+        setMobileNav(false);
+        setFilterOpen(false);
+      }
+    };
+    document.addEventListener("keydown", key);
+    return () => document.removeEventListener("keydown", key);
+  }, []);
+
+  useEffect(() => {
+    if (!detailsOpen && !chatOpen) return;
+    const previous = document.activeElement as HTMLElement | null;
+    const panel = detailsOpen ? detailRef.current : chatRef.current;
+    panel?.querySelector<HTMLElement>("button, input")?.focus();
+    const trap = (event: KeyboardEvent) => {
+      if (event.key !== "Tab" || !panel) return;
+      const controls = [
+        ...panel.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), input:not([disabled]), textarea, [tabindex="0"]',
+        ),
+      ].filter((el) => !el.closest("[hidden]"));
+      const first = controls[0],
+        last = controls.at(-1);
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      }
+      if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    };
+    document.addEventListener("keydown", trap);
+    return () => {
+      document.removeEventListener("keydown", trap);
+      previous?.focus();
+    };
+  }, [detailsOpen, chatOpen]);
+
   async function uploadPhoto(file: File | undefined) {
-    if (!file || !selected || uploadingPhoto || storageMode === "loading")
-      return;
+    if (!file || !selected || uploadingPhoto) return;
     const itemId = selected.id;
     setPhotoError(null);
     try {
@@ -705,6 +938,7 @@ export function LiquidDashboard() {
   }
 
   function closePlaceForm() {
+    setDeletingPlace(false);
     setAddingPlace(false);
     setEditingPlace(null);
     setPlaceName("");
@@ -715,6 +949,7 @@ export function LiquidDashboard() {
   }
 
   function openAddPlace() {
+    setIconChoicesOpen(false);
     setEditingPlace(null);
     setPlaceName("");
     setPlaceError("");
@@ -724,6 +959,11 @@ export function LiquidDashboard() {
   }
 
   function openEditPlace(place: Place) {
+    setIconChoicesOpen(false);
+    setDeletingPlace(false);
+    setMoveDestination(
+      locationOptions.find((name) => name !== place.name) ?? "",
+    );
     const matchingColor = placeColorOptions.find(
       (option) => option.color === place.color,
     );
@@ -737,6 +977,12 @@ export function LiquidDashboard() {
 
   async function createPlace(event: FormEvent) {
     event.preventDefault();
+    if (store.pending) {
+      setPlaceError(
+        "Wait for your item changes to finish saving, then try again.",
+      );
+      return;
+    }
     const name = placeName.trim();
     if (!name) {
       setPlaceError("Place name is required");
@@ -760,6 +1006,32 @@ export function LiquidDashboard() {
     );
     if (editingPlace) {
       const previousName = editingPlace.name;
+      if (storageMode === "saved") {
+        const target = locations.find((place) => place.name === previousName);
+        if (!target) return;
+        setSavingPlace(true);
+        try {
+          const updated = await apiRepository.updateLocation(target.id, name);
+          const nextLocations = locations.map((place) =>
+            place.id === updated.id ? updated : place,
+          );
+          setLocations(nextLocations);
+          store.load(items, nextLocations);
+          if (location === previousName) setLocation(name);
+          if (section === previousName) setSection(name);
+          setNotice(`${name} updated`);
+          closePlaceForm();
+        } catch (error) {
+          setPlaceError(
+            error instanceof Error
+              ? error.message
+              : "Could not update this space.",
+          );
+        } finally {
+          setSavingPlace(false);
+        }
+        return;
+      }
       const updatedPlace: Place = {
         ...editingPlace,
         name,
@@ -785,6 +1057,7 @@ export function LiquidDashboard() {
         ),
       );
       if (location === previousName) setLocation(name);
+      if (section === previousName) setSection(name);
       setNotice(`${name} updated`);
       closePlaceForm();
       return;
@@ -798,6 +1071,7 @@ export function LiquidDashboard() {
           ),
         );
         setLocation(name);
+        setSection(name);
         setQuery("");
         setKind("all");
         setNotice(`${name} saved`);
@@ -821,35 +1095,94 @@ export function LiquidDashboard() {
       },
     ]);
     setLocation(name);
+    setSection(name);
     setQuery("");
     setKind("all");
     setNotice(`${name} added`);
     closePlaceForm();
   }
 
-  function deletePlace() {
+  async function deletePlace() {
     if (!editingPlace) return;
+    if (store.pending) {
+      setPlaceError(
+        "Wait for your item changes to finish saving, then try again.",
+      );
+      return;
+    }
     const deletedName = editingPlace.name;
     const hasItems = items.some((item) => item.location_name === deletedName);
+    if (hasItems && !moveDestination) {
+      setPlaceError(
+        "Create another space before deleting this one so your items have somewhere to go.",
+      );
+      return;
+    }
+    if (storageMode === "saved") {
+      const target = locations.find((place) => place.name === deletedName);
+      if (!target) return;
+      setSavingPlace(true);
+      try {
+        await apiRepository.removeLocation(
+          target.id,
+          locations.find((place) => place.name === moveDestination)?.id ?? null,
+        );
+        const nextLocations = locations.filter(
+          (place) => place.id !== target.id,
+        );
+        const destination = nextLocations.find(
+          (place) => place.name === moveDestination,
+        );
+        setLocations(nextLocations);
+        store.load(
+          items.map((item) =>
+            item.location_id === target.id
+              ? {
+                  ...item,
+                  location_id: destination?.id ?? null,
+                  location_name: destination?.name ?? null,
+                  version: item.version + 1,
+                  updated_at: now(),
+                }
+              : item,
+          ),
+          nextLocations,
+        );
+      } catch (error) {
+        setPlaceError(
+          error instanceof Error
+            ? error.message
+            : "Could not delete this space.",
+        );
+        setSavingPlace(false);
+        return;
+      }
+      setSavingPlace(false);
+    }
     setPlaces((current) =>
       current.filter((place) => place.name !== deletedName),
     );
-    setItems((current) =>
-      current.map((item) =>
-        item.location_name === deletedName
-          ? {
-              ...item,
-              location_name: "Home",
-              version: item.version + 1,
-              updated_at: now(),
-            }
-          : item,
-      ),
-    );
-    if (location === deletedName) setLocation("all");
+    if (storageMode === "sample")
+      setItems((current) =>
+        current.map((item) =>
+          item.location_name === deletedName
+            ? {
+                ...item,
+                location_name: moveDestination,
+                version: item.version + 1,
+                updated_at: now(),
+              }
+            : item,
+        ),
+      );
+    if (location === deletedName) {
+      setLocation("all");
+      setSection("Home");
+      setOpenedContainer(null);
+    }
     setNotice(
       hasItems
-        ? `${deletedName} deleted; items moved to Home`
+        ? `${deletedName} deleted; items moved to ${moveDestination}`
         : `${deletedName} deleted`,
     );
     closePlaceForm();
@@ -858,6 +1191,7 @@ export function LiquidDashboard() {
   function selectItem(item: Item) {
     setSelectedId(item.id);
     setDetailsOpen(true);
+    setChatOpen(false);
     setEditing(false);
     setNameError("");
     setShowTagSuggestions(false);
@@ -992,178 +1326,644 @@ export function LiquidDashboard() {
 
   return (
     <main className={styles.shell}>
-      <div className={styles.backdrop} aria-hidden="true" />
-      <div className={styles.glow} aria-hidden="true" />
-
-      <header className={styles.brand}>
-        <span className={styles.brandIcon}>
-          <Package weight="fill" />
-        </span>
-        <span>Inventory</span>
-        <small>Private workspace</small>
-      </header>
-
       <div className={styles.workspace}>
-        <aside className={`${styles.glass} ${styles.rail}`}>
-          <nav aria-label="Inventory locations">
-            {navigation.map(({ label, value, Icon, icon, color, place }) => (
+        <aside
+          className={`${styles.rail} ${mobileNav ? styles.mobileNavOpen : ""}`}
+        >
+          <header className={styles.brand}>
+            <span className={styles.brandIcon}>
+              <Package weight="bold" />
+            </span>
+            <span>Inventory</span>
+            <button
+              className={styles.mobileClose}
+              onClick={() => setMobileNav(false)}
+              aria-label="Close navigation"
+            >
+              <X />
+            </button>
+          </header>
+          <nav className={styles.primaryNav} aria-label="Main navigation">
+            {[
+              { label: "Home", Icon: House },
+              { label: "Spaces", Icon: Buildings },
+              { label: "All items", Icon: List },
+              { label: "Favorites", Icon: Star },
+              { label: "Missing", Icon: MagnifyingGlass },
+              { label: "Tags", Icon: Tag },
+            ].map(({ label, Icon }) => (
               <button
-                key={value}
-                className={location === value ? styles.activeNav : ""}
-                data-place-icon={icon}
-                style={
-                  color
-                    ? ({ "--place-color": color } as CSSProperties)
-                    : undefined
-                }
-                onClick={() => setLocation(value)}
-                onDoubleClick={() => place && openEditPlace(place)}
-                aria-pressed={location === value}
-                title={place ? `Double-click to edit ${label}` : undefined}
+                key={label}
+                className={section === label ? styles.activeNav : ""}
+                aria-pressed={section === label}
+                onClick={() => navigate(label)}
               >
-                <Icon weight={location === value ? "fill" : "regular"} />
+                <Icon
+                  weight={
+                    section === label && label === "Home" ? "fill" : "regular"
+                  }
+                />
                 <span>{label}</span>
+                {label === "All items" && (
+                  <small aria-hidden="true">
+                    {items.filter((item) => item.kind !== "container").length}
+                  </small>
+                )}
               </button>
             ))}
           </nav>
-          <button
-            className={styles.addRail}
-            ref={addPlaceButton}
-            onClick={openAddPlace}
-            aria-label="Add place"
-            title="Add place"
-            aria-expanded={addingPlace}
-          >
-            <Plus weight="bold" />
-          </button>
-          <div className={styles.profile} title="Local demo profile">
-            JH
+          <div className={styles.spaceHeading}>
+            <span>Spaces</span>
+            <button
+              ref={addPlaceButton}
+              onClick={openAddPlace}
+              aria-label="Add place"
+              aria-expanded={addingPlace}
+            >
+              <Plus />
+            </button>
           </div>
-        </aside>
-
-        <section className={`${styles.glass} ${styles.library}`}>
-          <div className={styles.toolbar}>
-            <label className={styles.search}>
-              <MagnifyingGlass weight="bold" />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search items..."
-                aria-label="Search items"
-              />
-              {query && (
-                <button onClick={() => setQuery("")} aria-label="Clear search">
-                  ×
+          <nav className={styles.spaceNav} aria-label="Inventory locations">
+            <button
+              className={styles.homeSpace}
+              onClick={() => navigate("Home")}
+            >
+              <CaretDown />
+              <House weight="fill" />
+              <span>Home</span>
+            </button>
+            <div className={styles.roomTree}>
+              {(storageMode === "saved"
+                ? locations.map((place) => place.name)
+                : places
+                    .filter((place) =>
+                      [
+                        "Bedroom",
+                        "Bathroom",
+                        "Kitchen",
+                        "Living Room",
+                      ].includes(place.name),
+                    )
+                    .map((place) => place.name)
+              ).map((room) => (
+                <button
+                  key={room}
+                  aria-pressed={location === room}
+                  className={location === room ? styles.activeRoom : ""}
+                  onClick={() => navigate(room, room)}
+                >
+                  <Folder />
+                  <span>{room}</span>
                 </button>
-              )}
-            </label>
-
-            <GlassSelect
-              label="Sort"
-              value={sort}
-              onChange={setSort}
-              options={[
-                { value: "recent", label: "Recently updated" },
-                { value: "name", label: "Name" },
-                { value: "quantity", label: "Quantity" },
-              ]}
-            />
-            <GlassSelect
-              label="Filter items"
-              value={kind}
-              onChange={setKind}
-              icon={<SlidersHorizontal weight="bold" />}
-              options={[
-                { value: "all", label: "All items" },
-                { value: "durable", label: "Durable" },
-                { value: "consumable", label: "Consumable" },
-                { value: "container", label: "Containers" },
-                { value: "low", label: "Low stock" },
-              ]}
-            />
-
-            <div className={styles.viewToggle} aria-label="View style">
-              <button
-                className={view === "grid" ? styles.selectedToggle : ""}
-                onClick={() => setView("grid")}
-                aria-label="Grid view"
-              >
-                <SquaresFour weight="fill" />
-              </button>
-              <button
-                className={view === "list" ? styles.selectedToggle : ""}
-                onClick={() => setView("list")}
-                aria-label="List view"
-              >
-                <List weight="bold" />
-              </button>
+              ))}
+              {location === "Bedroom" &&
+                items
+                  .filter(
+                    (item) =>
+                      item.kind === "container" &&
+                      item.location_name === "Bedroom",
+                  )
+                  .map((container) => (
+                    <button
+                      key={container.id}
+                      className={styles.containerNav}
+                      onClick={() => {
+                        setOpenedContainer(container.id);
+                        setKind("all");
+                      }}
+                    >
+                      <Archive />
+                      <span>{container.name}</span>
+                    </button>
+                  ))}
             </div>
-          </div>
-
-          <div className={styles.libraryMeta}>
-            <span>{location === "all" ? "All spaces" : location}</span>
-            {kind !== "all" && (
+            {navigation
+              .filter(
+                (entry) => entry.value !== "all" && storageMode !== "saved",
+              )
+              .map(({ label, value, Icon, icon, color, place }) => (
+                <button
+                  key={value}
+                  className={location === value ? styles.activeNav : ""}
+                  data-place-icon={icon}
+                  style={
+                    color
+                      ? ({ "--place-color": color } as CSSProperties)
+                      : undefined
+                  }
+                  onClick={() => navigate(label, value)}
+                  onDoubleClick={() => place && openEditPlace(place)}
+                  aria-pressed={location === value}
+                  title={place ? `Double-click to edit ${label}` : undefined}
+                >
+                  <Icon />
+                  <span>{label}</span>
+                  <CaretRight className={styles.navChevron} />
+                </button>
+              ))}
+            {storageMode === "sample" && (
               <button
-                className={styles.activeFilter}
-                onClick={() => setKind("all")}
-                aria-label="Clear item filter"
+                onClick={() => {
+                  navigate("Travel");
+                  setTagFilter("travel");
+                }}
               >
-                {kind === "low" ? "Low stock" : kind} ×
+                <AirplaneTilt />
+                <span>Travel</span>
+                <CaretRight className={styles.navChevron} />
               </button>
             )}
-            <span>{filtered.length} items</span>
-            <button className={styles.addItem} onClick={() => addItem()}>
-              <Plus aria-hidden="true" /> Add item
-            </button>
+          </nav>
+          <div className={styles.sidebarBottom}>
             <button
-              className={styles.addContainer}
-              onClick={() => addContainer()}
+              className={styles.jarvisLauncher}
+              onClick={() => {
+                setChatOpen(true);
+                setDetailsOpen(false);
+              }}
+              aria-label="Open Jarvis"
             >
-              <Folder aria-hidden="true" /> Add container
+              <Sparkle weight="fill" />
+              <span>Ask Jarvis</span>
+              <kbd>AI</kbd>
             </button>
+            <div className={styles.profileRow}>
+              <span
+                className={styles.profile}
+                title={accountEmail ?? "Sample workspace"}
+              >
+                {accountEmail ? accountEmail.slice(0, 2).toUpperCase() : "JH"}
+              </span>
+              <details className={styles.settings}>
+                <summary>
+                  <GearSix />
+                  <span>Settings</span>
+                </summary>
+                <div>
+                  {accountControls ?? <span>Sample workspace</span>}
+                  <small>
+                    {storageMode === "saved"
+                      ? "Your private inventory"
+                      : "Explore with sample items"}
+                  </small>
+                </div>
+              </details>
+            </div>
           </div>
-
-          <ContainerGrid
-            items={items}
-            visible={filtered}
-            sort={sort}
-            selectedId={selected?.id}
-            view={view}
-            queryActive={
-              Boolean(query.trim()) || kind !== "all" || location !== "all"
-            }
-            onSelect={selectItem}
-            onAddItem={addItem}
-            onAddContainer={addContainer}
+        </aside>
+        {mobileNav && (
+          <button
+            className={styles.mobileScrim}
+            aria-label="Dismiss navigation"
+            onClick={() => setMobileNav(false)}
           />
+        )}
 
-          {filtered.length === 0 && (
+        <section
+          className={`${styles.library} ${query ? styles.searching : ""}`}
+        >
+          {spacesLanding && (
+            <button
+              className={styles.mobileMenu}
+              onClick={() => setMobileNav(true)}
+              aria-label="Open navigation"
+            >
+              <List />
+            </button>
+          )}
+          {!spacesLanding && (
+            <>
+              <div className={styles.toolbar}>
+                <button
+                  className={styles.mobileMenu}
+                  onClick={() => setMobileNav(true)}
+                  aria-label="Open navigation"
+                >
+                  <List />
+                </button>
+                <label className={styles.search}>
+                  <MagnifyingGlass />
+                  <input
+                    ref={searchInput}
+                    value={query}
+                    onChange={(event) => {
+                      setQuery(event.target.value);
+                      setOpenedContainer(null);
+                      setSearchTab("All results");
+                    }}
+                    placeholder="Search items, locations, or ask Jarvis..."
+                    aria-label="Search items"
+                  />
+                  {query ? (
+                    <button
+                      onClick={() => setQuery("")}
+                      aria-label="Clear search"
+                    >
+                      <X />
+                    </button>
+                  ) : (
+                    <kbd>⌘ K</kbd>
+                  )}
+                </label>
+                <button
+                  className={styles.addItem}
+                  aria-label="Add item"
+                  onClick={() => addItem(openedContainer ?? undefined)}
+                >
+                  <Plus /> <span>Add item</span>
+                </button>
+                <button
+                  className={styles.filterButton}
+                  aria-label="More filters"
+                  aria-expanded={filterOpen}
+                  onClick={() => setFilterOpen(!filterOpen)}
+                >
+                  <SlidersHorizontal />
+                </button>
+              </div>
+
+              {query && (
+                <div className={styles.searchTabs} aria-label="Search views">
+                  {[
+                    "All results",
+                    "Items",
+                    "Locations",
+                    "Containers",
+                    "Ask Jarvis",
+                  ].map((label) => (
+                    <button
+                      key={label}
+                      aria-pressed={searchTab === label}
+                      onClick={() => {
+                        if (label === "Ask Jarvis") {
+                          setPromptRequest({ text: query, id: Date.now() });
+                          setChatOpen(true);
+                          setDetailsOpen(false);
+                        } else setSearchTab(label);
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <nav
+                className={styles.breadcrumb}
+                aria-label="Inventory breadcrumb"
+              >
+                <button onClick={() => navigate("Home")}>
+                  <House weight="fill" />
+                  <span>Home</span>
+                </button>
+                {(section !== "Home" || currentContainer) && (
+                  <>
+                    <CaretRight />
+                    <button onClick={() => setOpenedContainer(null)}>
+                      {currentContainer?.location_name ?? section}
+                    </button>
+                  </>
+                )}
+                {containerChain.map((container) => (
+                  <span key={container.id}>
+                    <CaretRight />
+                    <button onClick={() => setOpenedContainer(container.id)}>
+                      {container.name}
+                    </button>
+                  </span>
+                ))}
+                {query && (
+                  <>
+                    <CaretRight />
+                    <span>Search results</span>
+                  </>
+                )}
+              </nav>
+
+              <div className={styles.filterbar}>
+                <GlassSelect
+                  label="Category"
+                  value={category}
+                  onChange={setCategory}
+                  options={[
+                    { value: "all", label: "Category" },
+                    ...categories.map((value) => ({ value, label: value })),
+                  ]}
+                />
+                <GlassSelect
+                  label="Status"
+                  value={status}
+                  onChange={setStatus}
+                  options={[
+                    { value: "all", label: "Status" },
+                    { value: "active", label: "Active" },
+                    { value: "stored", label: "Stored" },
+                    { value: "lent", label: "Lent" },
+                    { value: "lost", label: "Missing" },
+                  ]}
+                />
+                {view === "list" && (
+                  <GlassSelect
+                    label="Location"
+                    value={location}
+                    onChange={(value) => {
+                      setLocation(value);
+                      setOpenedContainer(null);
+                    }}
+                    options={[
+                      { value: "all", label: "Location" },
+                      ...locationOptions.map((value) => ({
+                        value,
+                        label: value,
+                      })),
+                    ]}
+                  />
+                )}
+                <GlassSelect
+                  label="Sort"
+                  value={sort}
+                  onChange={setSort}
+                  options={[
+                    { value: "recent", label: "Sort: Recently updated" },
+                    { value: "name", label: "Sort: Name" },
+                    { value: "quantity", label: "Sort: Quantity" },
+                  ]}
+                />
+                <div className={styles.viewToggle} aria-label="View style">
+                  <button
+                    className={view === "grid" ? styles.selectedToggle : ""}
+                    onClick={() => setView("grid")}
+                    aria-label="Grid view"
+                    aria-pressed={view === "grid"}
+                  >
+                    <SquaresFour weight="fill" />
+                    <span>Grid</span>
+                  </button>
+                  <button
+                    className={view === "list" ? styles.selectedToggle : ""}
+                    onClick={() => setView("list")}
+                    aria-label="List view"
+                    aria-pressed={view === "list"}
+                  >
+                    <List />
+                    <span>List</span>
+                  </button>
+                </div>
+              </div>
+              {filterOpen && (
+                <div className={styles.extraFilters}>
+                  <GlassSelect
+                    label="Filter items"
+                    value={kind}
+                    onChange={setKind}
+                    options={[
+                      { value: "all", label: "All items" },
+                      { value: "durable", label: "Durable" },
+                      { value: "consumable", label: "Consumable" },
+                      { value: "container", label: "Containers" },
+                      { value: "low", label: "Low stock" },
+                    ]}
+                  />
+                  <button
+                    className={styles.addContainer}
+                    onClick={() => addContainer(openedContainer ?? undefined)}
+                  >
+                    <Folder /> Add container
+                  </button>
+                  <button
+                    onClick={() => {
+                      setCategory("all");
+                      setStatus("all");
+                      setKind("all");
+                      setTagFilter("");
+                    }}
+                  >
+                    Reset filters
+                  </button>
+                </div>
+              )}
+              {kind !== "all" && (
+                <button
+                  className={styles.activeFilter}
+                  onClick={() => setKind("all")}
+                  aria-label="Clear item filter"
+                >
+                  {kind === "low" ? "Low stock" : kind}
+                  <X />
+                </button>
+              )}
+              {section === "Tags" && (
+                <div className={styles.tagBrowser}>
+                  {allPastTags.map((tag) => (
+                    <button
+                      key={tag}
+                      aria-pressed={tagFilter === tag}
+                      onClick={() => setTagFilter(tagFilter === tag ? "" : tag)}
+                    >
+                      <Tag />
+                      {tag}
+                      <small>
+                        {items.filter((item) => item.tags.includes(tag)).length}
+                      </small>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+          <div className={query ? styles.searchLayout : undefined}>
+            <div className={styles.resultsContent}>
+              {spacesLanding && (
+                <SpacesBrowser
+                  spaces={managedPlaces}
+                  items={items}
+                  onOpen={(name) => navigate(name, name)}
+                  onAdd={openAddPlace}
+                  onEdit={(name) => {
+                    const place = managedPlaces.find(
+                      (place) => place.name === name,
+                    );
+                    if (place) openEditPlace(place);
+                  }}
+                  onDelete={(name) => {
+                    const place = managedPlaces.find(
+                      (place) => place.name === name,
+                    );
+                    if (place) {
+                      openEditPlace(place);
+                      setDeletingPlace(true);
+                    }
+                  }}
+                />
+              )}
+              {spacesLanding && (
+                <h2 className={styles.spaceContainersTitle}>Containers</h2>
+              )}
+              {query && (
+                <h2 className={styles.resultsTitle}>
+                  {searchTab === "All results" ? "Items" : searchTab}{" "}
+                  <span>
+                    (
+                    {searchTab === "Locations"
+                      ? locationOptions.filter((name) =>
+                          name.toLowerCase().includes(query.toLowerCase()),
+                        ).length
+                      : filtered.filter((item) =>
+                          searchTab === "Containers"
+                            ? item.kind === "container"
+                            : item.kind !== "container",
+                        ).length}
+                    )
+                  </span>
+                </h2>
+              )}
+              {query && searchTab === "Locations" ? (
+                <div className={styles.locationResults}>
+                  {locationOptions
+                    .filter((name) =>
+                      name.toLowerCase().includes(query.toLowerCase()),
+                    )
+                    .map((name) => (
+                      <button key={name} onClick={() => navigate(name, name)}>
+                        <Folder />
+                        <span>{name}</span>
+                        <CaretRight />
+                      </button>
+                    ))}
+                </div>
+              ) : (
+                <ContainerGrid
+                  items={items}
+                  visible={
+                    query && searchTab === "Containers"
+                      ? filtered.filter((item) => item.kind === "container")
+                      : visibleItems
+                  }
+                  sort={sort}
+                  selectedId={detailsOpen ? selected?.id : undefined}
+                  view={query ? "list" : view}
+                  opened={openedContainer}
+                  onOpen={(id) => {
+                    setOpenedContainer(id);
+                    if (id) {
+                      setKind("all");
+                      setQuery("");
+                    }
+                  }}
+                  showContainers={
+                    (query && searchTab === "Containers") ||
+                    section === "Spaces" ||
+                    kind === "container" ||
+                    location !== "all"
+                  }
+                  queryActive={
+                    Boolean(query.trim()) ||
+                    kind !== "all" ||
+                    location !== "all"
+                  }
+                  onSelect={selectItem}
+                  onAddItem={addItem}
+                  onAddContainer={addContainer}
+                />
+              )}
+            </div>
+            {query && (
+              <aside className={styles.searchSuggestions}>
+                <h3>Suggested</h3>
+                {[
+                  "Where are my camera accessories?",
+                  "Show the items in my cabinet.",
+                  "What do I have for camping?",
+                  "Add a camera battery to my backpack.",
+                ].map((question) => (
+                  <button
+                    key={question}
+                    onClick={() => {
+                      setPromptRequest({ text: question, id: Date.now() });
+                      setChatOpen(true);
+                      setDetailsOpen(false);
+                    }}
+                  >
+                    <Sparkle />
+                    <span>{question}</span>
+                  </button>
+                ))}
+              </aside>
+            )}
+          </div>
+          {filtered.length === 0 && searchTab !== "Locations" && (
             <div className={styles.emptyState}>
               <Cube weight="duotone" />
-              <strong>No items found</strong>
-              <span>Try a different search or filter.</span>
+              <strong>
+                {storageMode === "saved" && !items.length
+                  ? "Your inventory starts here"
+                  : "No items found"}
+              </strong>
+              <span>
+                {storageMode === "saved" && !items.length
+                  ? "Create a place, then add your first item and photo."
+                  : "Try a different search or filter."}
+              </span>
+              {storageMode === "saved" &&
+                !items.length &&
+                !locations.length && (
+                  <button className={styles.addItem} onClick={openAddPlace}>
+                    Create your first place
+                  </button>
+                )}
             </div>
           )}
-
           <footer className={styles.libraryFooter}>
+            {previewHome &&
+              filtered.filter((item) => item.kind !== "container").length >
+                17 && (
+                <button
+                  className={styles.viewAll}
+                  onClick={() => navigate("All items")}
+                >
+                  View all items <CaretRight />
+                </button>
+              )}
             <span>
-              <span className={styles.liveDot} />{" "}
+              {previewHome &&
+              filtered.filter((item) => item.kind !== "container").length > 17
+                ? `Showing ${visibleItems.length} of `
+                : ""}
+              {
+                (openedContainer
+                  ? filtered.filter(
+                      (item) => item.parent_container_id === openedContainer,
+                    )
+                  : section === "Spaces"
+                    ? filtered
+                    : filtered.filter((item) => item.kind !== "container")
+                ).length
+              }{" "}
+              items
+            </span>
+            <span role="status">{storeError || notice}</span>
+            <span className={styles.storageLabel}>
+              <span className={styles.liveDot} />
               {storageMode === "saved"
                 ? "Saved inventory"
-                : storageMode === "loading"
-                  ? "Connecting to saved inventory"
-                  : "Local sample data"}
+                : "Local sample data"}
             </span>
-            <span>{loadingError || storeError || notice}</span>
           </footer>
         </section>
-
-        <div
-          className={`${styles.detailColumn} ${!detailsOpen ? styles.detailsClosed : ""}`}
-        >
+        {(detailsOpen || chatOpen) && (
+          <button
+            className={styles.panelScrim}
+            aria-label="Dismiss panel"
+            onClick={() => {
+              setDetailsOpen(false);
+              setChatOpen(false);
+            }}
+          />
+        )}
+        <div className={styles.detailColumn}>
           {detailsOpen && (
             <aside
-              className={`${styles.glass} ${styles.details}`}
+              ref={detailRef}
+              className={styles.details}
               aria-label="Item details"
             >
               <button
@@ -1200,7 +2000,7 @@ export function LiquidDashboard() {
                           type="file"
                           accept="image/jpeg,image/png,image/webp"
                           aria-label="Upload item photo"
-                          disabled={uploadingPhoto || storageMode === "loading"}
+                          disabled={uploadingPhoto}
                           aria-describedby="photo-help"
                           onChange={(event) => {
                             uploadPhoto(event.target.files?.[0]);
@@ -1245,14 +2045,20 @@ export function LiquidDashboard() {
                         ) : (
                           <Cube weight="duotone" />
                         )}{" "}
-                        {selected.kind === "container"
-                          ? "Container"
-                          : selected.kind === "durable"
-                            ? "Durable"
-                            : "Consumable"}
+                        {selected.category ||
+                          (selected.kind === "container"
+                            ? "Container"
+                            : "Uncategorized")}
                       </span>
                     </div>
                     <div className={styles.moreMenuWrap}>
+                      <button
+                        className={styles.editButton}
+                        onClick={editing ? finishEditing : startEditing}
+                      >
+                        <PencilSimple />
+                        {editing ? "Done" : "Edit"}
+                      </button>
                       <button
                         className={`${styles.moreButton} ${styles.favoriteButton}`}
                         aria-label="Favorite item"
@@ -1536,6 +2342,80 @@ export function LiquidDashboard() {
                       </div>
                     </div>
 
+                    <label className={styles.fieldRow}>
+                      <span className={styles.fieldLabel}>
+                        <CheckCircle />
+                        Condition
+                      </span>
+                      <GlassSelect
+                        label="Item condition"
+                        compact
+                        value={selected.condition}
+                        onChange={(value) =>
+                          patchSelected({ condition: value })
+                        }
+                        options={[
+                          { value: "new", label: "Like new" },
+                          { value: "good", label: "Good" },
+                          { value: "fair", label: "Fair" },
+                          { value: "poor", label: "Poor" },
+                          { value: "unknown", label: "Unknown" },
+                        ]}
+                      />
+                    </label>
+                    <label className={styles.fieldRow}>
+                      <span className={styles.fieldLabel}>
+                        <Archive />
+                        Status
+                      </span>
+                      <GlassSelect
+                        label="Item status"
+                        compact
+                        value={selected.status}
+                        onChange={(value) => patchSelected({ status: value })}
+                        options={[
+                          { value: "active", label: "Active" },
+                          { value: "stored", label: "Stored" },
+                          { value: "lent", label: "Lent" },
+                          { value: "lost", label: "Missing" },
+                          { value: "disposed", label: "Disposed" },
+                        ]}
+                      />
+                    </label>
+                    <div className={styles.fieldRow}>
+                      <span className={styles.fieldLabel}>
+                        <CalendarBlank />
+                        Added
+                      </span>
+                      <span className={styles.dateValue}>
+                        {new Date(selected.created_at).toLocaleDateString(
+                          "en-US",
+                          {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                            timeZone: "UTC",
+                          },
+                        )}
+                      </span>
+                    </div>
+                    <div className={styles.fieldRow}>
+                      <span className={styles.fieldLabel}>
+                        <Clock />
+                        Last updated
+                      </span>
+                      <span className={styles.dateValue}>
+                        {new Date(selected.updated_at).toLocaleDateString(
+                          "en-US",
+                          {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                            timeZone: "UTC",
+                          },
+                        )}
+                      </span>
+                    </div>
                     <label className={styles.notesRow}>
                       <span>Notes</span>
                       <textarea
@@ -1550,6 +2430,29 @@ export function LiquidDashboard() {
                       />
                     </label>
                   </div>
+                  {relatedItems.length > 0 && (
+                    <section className={styles.related}>
+                      <h3>Related items</h3>
+                      <div>
+                        {relatedItems.map((item) => (
+                          <button
+                            key={item.id}
+                            onClick={() => selectItem(item)}
+                          >
+                            <Image
+                              src={item.image}
+                              alt=""
+                              width={100}
+                              height={80}
+                              unoptimized={item.image.startsWith("/api/items/")}
+                            />
+                            <strong>{item.name}</strong>
+                            <span>{item.category}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </section>
+                  )}
                 </>
               ) : (
                 <div className={styles.noSelection}>
@@ -1559,157 +2462,290 @@ export function LiquidDashboard() {
               )}
             </aside>
           )}
-          <JarvisChat
-            items={items}
-            saved={storageMode === "saved"}
-            onApplyChanges={(changes, versions) =>
-              store.applyChanges(changes, versions, locationOptions)
-            }
-            onSelect={(id) => {
-              setSelectedId(id);
-              setDetailsOpen(true);
-              setEditing(false);
-            }}
-          />
+          <div ref={chatRef} className={styles.chatPanel} hidden={!chatOpen}>
+            <button
+              className={styles.closeChat}
+              aria-label="Close Jarvis"
+              onClick={() => setChatOpen(false)}
+            >
+              <X />
+            </button>
+            <JarvisChat
+              promptRequest={promptRequest}
+              items={items}
+              saved={storageMode === "saved"}
+              onApplyChanges={(changes, versions) =>
+                store.applyChanges(changes, versions, locationOptions)
+              }
+              onSelect={(id) => {
+                setSelectedId(id);
+                setDetailsOpen(true);
+                setChatOpen(false);
+                setEditing(false);
+              }}
+            />
+          </div>
         </div>
       </div>
 
       {addingPlace && (
-        <div className={styles.placeOverlay}>
+        <div
+          className={`${styles.placeOverlay} ${!deletingPlace ? styles.spaceDrawerOverlay : ""}`}
+        >
           <div
-            className={styles.placeDialog}
+            className={`${styles.placeDialog} ${!deletingPlace ? styles.spaceDrawer : styles.spaceDeleteDialog}`}
             role="dialog"
             aria-modal="true"
             aria-labelledby="place-dialog-title"
             onKeyDown={(event) => {
-              if (event.key === "Escape") closePlaceForm();
+              if (event.key === "Escape" && !savingPlace) closePlaceForm();
+              if (event.key === "Tab") {
+                const controls = Array.from(
+                  event.currentTarget.querySelectorAll<HTMLElement>(
+                    'button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex="0"]',
+                  ),
+                );
+                const first = controls[0],
+                  last = controls.at(-1);
+                if (event.shiftKey && document.activeElement === first) {
+                  event.preventDefault();
+                  last?.focus();
+                } else if (!event.shiftKey && document.activeElement === last) {
+                  event.preventDefault();
+                  first?.focus();
+                }
+              }
             }}
           >
-            <form onSubmit={createPlace}>
-              <div className={styles.placeDialogHeader}>
-                <div>
-                  <span className={styles.dialogEyebrow}>
-                    {editingPlace ? "Edit space" : "New space"}
-                  </span>
-                  <h2 id="place-dialog-title">
-                    {editingPlace ? "Edit place" : "Add a place"}
-                  </h2>
-                  <p>
-                    {editingPlace
-                      ? "Update this space’s name, icon, or color."
-                      : "Give this space a name and a little personality."}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  className={styles.dialogClose}
-                  aria-label="Close place dialog"
-                  onClick={closePlaceForm}
-                >
-                  ×
-                </button>
-              </div>
-
-              <label className={styles.placeNameField} htmlFor="place-name">
-                <span>Place name</span>
-                <input
-                  id="place-name"
-                  autoFocus
-                  maxLength={80}
-                  value={placeName}
-                  placeholder="e.g. Garage"
-                  aria-invalid={Boolean(placeError)}
-                  aria-describedby={placeError ? "place-error" : undefined}
-                  onChange={(event) => {
-                    setPlaceName(event.target.value);
-                    setPlaceError("");
-                  }}
-                />
-              </label>
-
-              <fieldset className={styles.placeChoices}>
-                <legend>Choose an icon</legend>
-                <div className={styles.choiceGrid}>
-                  {placeIconOptions.map((option) => {
-                    const OptionIcon = option.Icon;
-                    return (
-                      <label key={option.value} className={styles.choiceCard}>
-                        <input
-                          type="radio"
-                          name="place-icon"
-                          value={option.value}
-                          aria-label={option.label}
-                          checked={placeIcon === option.value}
-                          onChange={() => setPlaceIcon(option.value)}
-                        />
-                        <OptionIcon weight="duotone" aria-hidden="true" />
-                        <span>{option.label}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </fieldset>
-
-              <fieldset className={styles.placeChoices}>
-                <legend>Highlight color</legend>
-                <div className={styles.colorChoices}>
-                  {placeColorOptions.map((option) => (
-                    <label key={option.value} className={styles.colorChoice}>
-                      <input
-                        type="radio"
-                        name="place-color"
-                        value={option.value}
-                        aria-label={option.label}
-                        checked={placeColor === option.value}
-                        onChange={() => setPlaceColor(option.value)}
-                      />
-                      <span
-                        className={styles.colorSwatch}
-                        style={{ "--swatch": option.color } as CSSProperties}
-                      />
-                      <span>{option.label}</span>
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
-
-              {placeError && (
-                <p id="place-error" className={styles.placeError} role="alert">
-                  {placeError}
-                </p>
-              )}
-              <div className={styles.placeDialogActions}>
-                {editingPlace && (
+            <form
+              onSubmit={
+                deletingPlace
+                  ? (event) => {
+                      event.preventDefault();
+                      void deletePlace();
+                    }
+                  : createPlace
+              }
+            >
+              <fieldset
+                disabled={savingPlace}
+                className={styles.spaceFormFields}
+              >
+                <div className={styles.placeDialogHeader}>
+                  <div>
+                    <span className={styles.dialogEyebrow}>
+                      {editingPlace ? "Edit space" : "New space"}
+                    </span>
+                    <h2 id="place-dialog-title">
+                      {deletingPlace
+                        ? `Delete ${editingPlace?.name}?`
+                        : editingPlace
+                          ? "Edit space"
+                          : "Add space"}
+                    </h2>
+                    <p>
+                      {deletingPlace
+                        ? "This removes only the space. Its items and containers will be kept."
+                        : editingPlace
+                          ? "Update this space’s name, icon, or color."
+                          : "Give this space a name and a little personality."}
+                    </p>
+                  </div>
                   <button
                     type="button"
-                    className={styles.dialogDelete}
-                    aria-label="Delete place"
-                    onClick={deletePlace}
+                    className={styles.dialogClose}
+                    aria-label="Close place dialog"
+                    onClick={closePlaceForm}
                   >
-                    Delete place
+                    <X size={18} />
                   </button>
+                </div>
+
+                {deletingPlace ? (
+                  <label
+                    className={styles.placeNameField}
+                    htmlFor="move-destination"
+                  >
+                    <span>Move items to</span>
+                    <select
+                      autoFocus
+                      id="move-destination"
+                      value={moveDestination}
+                      onChange={(event) =>
+                        setMoveDestination(event.target.value)
+                      }
+                    >
+                      <option value="">Choose a space</option>
+                      {locationOptions
+                        .filter((name) => name !== editingPlace?.name)
+                        .map((name) => (
+                          <option key={name}>{name}</option>
+                        ))}
+                    </select>
+                  </label>
+                ) : (
+                  <>
+                    <div className={styles.spaceIconPreview}>
+                      <span
+                        style={{
+                          color: placeColorOptions.find(
+                            (option) => option.value === placeColor,
+                          )?.color,
+                        }}
+                      >
+                        {(() => {
+                          const PreviewIcon =
+                            placeIconOptions.find(
+                              (option) => option.value === placeIcon,
+                            )?.Icon ?? MapPin;
+                          return <PreviewIcon weight="duotone" />;
+                        })()}
+                      </span>
+                      {storageMode === "sample" && (
+                        <button
+                          type="button"
+                          aria-expanded={iconChoicesOpen}
+                          onClick={() => setIconChoicesOpen(!iconChoicesOpen)}
+                        >
+                          <GearSix />
+                          Change icon
+                        </button>
+                      )}
+                    </div>
+                    <label
+                      className={styles.placeNameField}
+                      htmlFor="place-name"
+                    >
+                      <span>Place name</span>
+                      <input
+                        id="place-name"
+                        autoFocus
+                        maxLength={80}
+                        value={placeName}
+                        placeholder="e.g. Garage"
+                        aria-invalid={Boolean(placeError)}
+                        aria-describedby={
+                          placeError ? "place-error" : undefined
+                        }
+                        onChange={(event) => {
+                          setPlaceName(event.target.value);
+                          setPlaceError("");
+                        }}
+                      />
+                    </label>
+
+                    {storageMode === "sample" && iconChoicesOpen && (
+                      <>
+                        <fieldset className={styles.placeChoices}>
+                          <legend>Choose an icon</legend>
+                          <div className={styles.choiceGrid}>
+                            {placeIconOptions.map((option) => {
+                              const OptionIcon = option.Icon;
+                              return (
+                                <label
+                                  key={option.value}
+                                  className={styles.choiceCard}
+                                >
+                                  <input
+                                    type="radio"
+                                    name="place-icon"
+                                    value={option.value}
+                                    aria-label={option.label}
+                                    checked={placeIcon === option.value}
+                                    onChange={() => setPlaceIcon(option.value)}
+                                  />
+                                  <OptionIcon
+                                    weight="duotone"
+                                    aria-hidden="true"
+                                  />
+                                  <span>{option.label}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </fieldset>
+
+                        <fieldset className={styles.placeChoices}>
+                          <legend>Highlight color</legend>
+                          <div className={styles.colorChoices}>
+                            {placeColorOptions.map((option) => (
+                              <label
+                                key={option.value}
+                                className={styles.colorChoice}
+                              >
+                                <input
+                                  type="radio"
+                                  name="place-color"
+                                  value={option.value}
+                                  aria-label={option.label}
+                                  checked={placeColor === option.value}
+                                  onChange={() => setPlaceColor(option.value)}
+                                />
+                                <span
+                                  className={styles.colorSwatch}
+                                  style={
+                                    {
+                                      "--swatch": option.color,
+                                    } as CSSProperties
+                                  }
+                                />
+                                <span>{option.label}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </fieldset>
+                      </>
+                    )}
+                  </>
                 )}
-                <button
-                  type="button"
-                  className={styles.dialogCancel}
-                  aria-label={
-                    editingPlace
-                      ? "Cancel editing place"
-                      : "Cancel adding place"
-                  }
-                  onClick={closePlaceForm}
-                >
-                  Cancel
-                </button>
-                <button type="submit" className={styles.dialogCreate}>
-                  {editingPlace ? (
-                    <Check weight="bold" />
-                  ) : (
-                    <Plus weight="bold" />
+                {placeError && (
+                  <p
+                    id="place-error"
+                    className={styles.placeError}
+                    role="alert"
+                  >
+                    {placeError}
+                  </p>
+                )}
+                <div className={styles.placeDialogActions}>
+                  {editingPlace && !deletingPlace && (
+                    <button
+                      type="button"
+                      className={styles.dialogDelete}
+                      aria-label="Delete place"
+                      onClick={() => setDeletingPlace(true)}
+                    >
+                      Delete place
+                    </button>
                   )}
-                  {editingPlace ? "Save changes" : "Create place"}
-                </button>
-              </div>
+                  <button
+                    type="button"
+                    className={styles.dialogCancel}
+                    aria-label={
+                      editingPlace
+                        ? "Cancel editing place"
+                        : "Cancel adding place"
+                    }
+                    onClick={closePlaceForm}
+                  >
+                    Cancel
+                  </button>
+                  <button type="submit" className={styles.dialogCreate}>
+                    {editingPlace ? (
+                      <Check weight="bold" />
+                    ) : (
+                      <Plus weight="bold" />
+                    )}
+                    {savingPlace
+                      ? "Saving…"
+                      : deletingPlace
+                        ? "Confirm deletion"
+                        : editingPlace
+                          ? "Save changes"
+                          : "Create place"}
+                  </button>
+                </div>
+              </fieldset>
             </form>
           </div>
         </div>

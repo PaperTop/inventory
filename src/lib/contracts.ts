@@ -6,4 +6,6 @@ export interface InventoryRepository {
   remove(id: string, version: number): Promise<void>;
   locations(): Promise<Location[]>;
   createLocation(name: string): Promise<Location>;
+  updateLocation(id: string, name: string): Promise<Location>;
+  removeLocation(id: string, destinationId: string | null): Promise<void>;
 }

@@ -135,5 +135,24 @@ export function createRepository(
       check(error);
       return data as Location;
     },
+    async updateLocation(id, name) {
+      const { data, error } = await client
+        .from("locations")
+        .update({ name })
+        .eq("user_id", userId)
+        .eq("id", id)
+        .select("id,user_id,name")
+        .maybeSingle();
+      check(error);
+      if (!data) throw new HttpError(404, "Space not found.");
+      return data as Location;
+    },
+    async removeLocation(id, destinationId) {
+      const { error } = await client.rpc("delete_inventory_space", {
+        space_id: id,
+        destination_id: destinationId,
+      });
+      check(error);
+    },
   };
 }

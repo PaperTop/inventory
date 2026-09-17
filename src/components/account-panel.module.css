@@ -1,0 +1,217 @@
+.dialog,
+.screen,
+.banner {
+  font-family: Arial, Helvetica, sans-serif;
+}
+.controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  min-width: 0;
+}
+.email {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #dfecff;
+  font-size: 13px;
+}
+.primary,
+.secondary,
+.textButton,
+.close {
+  font: inherit;
+  cursor: pointer;
+}
+.primary,
+.secondary {
+  padding: 11px 18px;
+  border-radius: 13px;
+  border: 1px solid #a8caff70;
+  color: #f5faff;
+  font-weight: 600;
+  background: #17467c;
+}
+.primary {
+  background: #c4e5ff;
+  color: #09224b;
+  border-color: #c4e5ff;
+}
+.primary:hover {
+  background: #e0f2ff;
+}
+.secondary:hover {
+  background: #24558c;
+}
+.primary:disabled,
+.secondary:disabled,
+.textButton:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.primary:focus-visible,
+.secondary:focus-visible,
+.textButton:focus-visible,
+.close:focus-visible,
+.form input:focus-visible {
+  outline: 2px solid #b8e3ff;
+  outline-offset: 4px;
+}
+.dialog {
+  color: #f5faff;
+  background: linear-gradient(145deg, #163b68, #091a38);
+  width: min(440px, calc(100vw - 32px));
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+  border: 1px solid #a8caff70;
+  border-radius: 24px;
+  padding: 30px;
+  box-shadow: 0 28px 100px #0008;
+}
+.dialog::backdrop {
+  background: #020919b8;
+  backdrop-filter: blur(8px);
+}
+.dialog h1 {
+  margin: 0 35px 8px 0;
+  font-size: 25px;
+}
+.close {
+  position: absolute;
+  right: 20px;
+  top: 20px;
+  border: 0;
+  background: transparent;
+  color: #d2e5ff;
+  font-size: 26px;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+}
+.form {
+  display: grid;
+  gap: 16px;
+}
+.form label {
+  display: grid;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 550;
+}
+.form input {
+  width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 12px 14px;
+  color: white;
+  background: #061831a8;
+  border: 1px solid #91b1dd66;
+  border-radius: 11px;
+  font: inherit;
+}
+.form small,
+.finePrint,
+.description {
+  color: #bfd0e7;
+}
+.description {
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 10px 0 4px;
+}
+.finePrint {
+  margin: 0;
+  text-align: center;
+  font-size: 12px;
+}
+.textButton {
+  background: transparent;
+  border: 0;
+  color: #cae7ff;
+  padding: 7px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.error,
+.message {
+  font-size: 14px;
+  line-height: 1.5;
+  padding: 12px 14px;
+  margin: 0;
+  border-radius: 12px;
+}
+.error {
+  background: #652d4266;
+  color: #ffdde5;
+  border: 1px solid #e095a566;
+}
+.message {
+  background: #224a6666;
+  color: #d6f1ff;
+  border: 1px solid #8fbde766;
+}
+.screen {
+  min-height: 100dvh;
+  display: grid;
+  place-content: center;
+  padding: 24px;
+  background: #061722;
+  color: #f5faff;
+}
+.card {
+  width: min(480px, calc(100vw - 48px));
+  padding: 28px;
+  border: 1px solid #aacaf766;
+  border-radius: 24px;
+  background: #081b39ed;
+  box-shadow: 0 24px 80px #0005;
+}
+.card h1 {
+  margin: 0 0 16px;
+  font-size: 25px;
+}
+.card .controls {
+  margin-top: 20px;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+.banner {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  width: min(520px, calc(100vw - 32px));
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  color: #e5f5ff;
+  background: #0b244cf5;
+  border: 1px solid #a8caff70;
+  border-radius: 16px;
+  box-shadow: 0 8px 35px #0005;
+  font-size: 14px;
+}
+.banner button {
+  margin-left: auto;
+  background: none;
+  color: inherit;
+  border: 0;
+  cursor: pointer;
+  font-size: 22px;
+}
+@media (max-width: 640px) {
+  .email {
+    max-width: 170px;
+    font-size: 12px;
+  }
+  .dialog {
+    padding: 24px;
+  }
+  .controls {
+    gap: 8px;
+  }
+}

@@ -1,5 +1,12 @@
 # Verification record
 
+## Account flow — 2026-09-16
+
+- ESLint, TypeScript, 184 automated tests, production build, and formatting checks passed. Four opt-in live-model tests were skipped.
+- Coverage includes signup/password validation, confirmation/resend/errors, login/loading/retry, logout failures, account isolation, and ignoring delayed chat, upload, or queued writes after leaving an account.
+- Browser checks confirmed the sign-in and signup dialog opens over the sample workspace; the narrow viewport keeps the form scrollable. Static code review found no important issues.
+- Real signup, email delivery, and a hosted authenticated session were not exercised. Verify those with your own account after configuring the Supabase confirmation template and redirect URL described in README.
+
 ## Release preparation — 2026-09-16
 
 - `npm run release:check` passed formatting, ESLint, TypeScript, 162 automated tests, and the production build. Four opt-in live-model tests were skipped. The two previously reported Jarvis formatting issues are resolved.

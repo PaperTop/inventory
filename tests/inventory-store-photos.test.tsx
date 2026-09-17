@@ -199,3 +199,46 @@ it("preserves edits queued during an upload as each response completes", async (
   expect(saved.attributes.image_path).toBe(path);
   expect(result.current.items[0].quantity).toBe(3);
 });
+
+it("does not attach an uploaded photo after the workspace unmounts", async () => {
+  let resolveUpload!: (value: string) => void;
+  vi.mocked(uploadInventoryPhoto).mockReturnValue(
+    new Promise((resolve) => {
+      resolveUpload = resolve;
+    }),
+  );
+  const update = vi.spyOn(apiRepository, "update");
+  const hook = renderHook(() => useInventoryStore([visualItem(row)], [], true));
+  let task: Promise<unknown>;
+  await act(async () => {
+    task = hook.result.current.savePhoto(row.id, file);
+  });
+  hook.unmount();
+  await act(async () => {
+    resolveUpload(path);
+    await task;
+  });
+  expect(update).not.toHaveBeenCalled();
+});
+
+it("drops queued edits when the account workspace unmounts", async () => {
+  let finish!: (value: Item) => void;
+  const update = vi.spyOn(apiRepository, "update").mockReturnValue(
+    new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  const hook = renderHook(() => useInventoryStore([visualItem(row)], [], true));
+  let first: unknown, second: unknown;
+  await act(async () => {
+    first = hook.result.current.patch(row.id, { name: "First" });
+    second = hook.result.current.patch(row.id, { name: "Second" });
+  });
+  expect(update).toHaveBeenCalledTimes(1);
+  hook.unmount();
+  await act(async () => {
+    finish({ ...row, name: "First", version: 3 });
+    await Promise.all([first, second]);
+  });
+  expect(update).toHaveBeenCalledTimes(1);
+});

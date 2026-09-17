@@ -8,3 +8,9 @@ export function GET(request: Request) {
 export function POST(request: Request) {
   return safely(async () => handleLocations(request, await requestContext()));
 }
+export function PATCH(request: Request) {
+  return safely(async () => handleLocations(request, await requestContext()));
+}
+export function DELETE(request: Request) {
+  return safely(async () => handleLocations(request, await requestContext()));
+}

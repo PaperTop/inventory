@@ -31,6 +31,41 @@ beforeAll(async () => {
 afterAll(async () => {
   await db?.close();
 });
+it("deletes a space atomically while preserving nested items and owner boundaries", async () => {
+  const source = "aaaaaaaa-aaaa-4aaa-8aaa-000000000003";
+  await db.query(
+    "insert into locations(id,user_id,name) values ($1,$2,'Temporary room')",
+    [source, owner],
+  );
+  const box = await insert("Moving box");
+  const child = await insert("Keep this", "durable", box);
+  await db.query("update items set location_id=$1 where id=$2", [source, box]);
+  await expect(
+    db.query("select delete_inventory_space($1,null)", [source]),
+  ).rejects.toThrow(/destination/i);
+  await expect(
+    db.query("select delete_inventory_space($1,$1)", [source]),
+  ).rejects.toThrow(/another/i);
+  await as(other);
+  await expect(
+    db.query("select delete_inventory_space($1,$2)", [source, garage]),
+  ).rejects.toThrow(/unavailable/i);
+  await as(owner);
+  await db.query("select delete_inventory_space($1,$2)", [source, garage]);
+  expect(
+    (await db.query("select id from locations where id=$1", [source])).rows,
+  ).toEqual([]);
+  const snapshot = (
+    await db.query<{
+      inventory_snapshot: { id: string; location_path: string[] }[];
+    }>("select inventory_snapshot() ")
+  ).rows[0].inventory_snapshot;
+  expect(snapshot.find((item) => item.id === child)?.location_path).toEqual([
+    "Garage",
+    "Moving box",
+    "Keep this",
+  ]);
+});
 async function insert(
   name: string,
   kind = "container",

@@ -1,5 +1,10 @@
 import { expect, it } from "vitest";
-import { handleItems, handleItem, handleAsk } from "../src/lib/handlers";
+import {
+  handleItems,
+  handleItem,
+  handleAsk,
+  handleLocations,
+} from "../src/lib/handlers";
 import { itemInput, type Item } from "../src/lib/inventory";
 import { HttpError, type RequestContext } from "../src/lib/http";
 import type { InventoryRepository } from "../src/lib/contracts";
@@ -37,10 +42,38 @@ function setup() {
     },
     locations: async () => [],
     createLocation: async (name) => ({ id, name, user_id: id }),
+    updateLocation: async (key, name) => ({ id: key, name, user_id: id }),
+    removeLocation: async () => {},
   };
   const ctx: RequestContext = { userId: id, repository: repo };
   return { rows, ctx };
 }
+it("validates space edits and rejects unsafe deletions", async () => {
+  const { ctx } = setup();
+  const response = await handleLocations(
+    request("PATCH", { id, name: "Office" }),
+    ctx,
+  );
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({
+    location: { id, user_id: id, name: "Office" },
+  });
+  expect(
+    (await handleLocations(request("DELETE", { id, destinationId: id }), ctx))
+      .status,
+  ).toBe(400);
+  expect(
+    (
+      await handleLocations(
+        request("DELETE", { id, destinationId: null }, "https://evil.example"),
+        ctx,
+      )
+    ).status,
+  ).toBe(403);
+  expect(
+    (await handleLocations(request("PATCH", { id, name: " " }), ctx)).status,
+  ).toBe(400);
+});
 function request(
   method: string,
   body?: unknown,

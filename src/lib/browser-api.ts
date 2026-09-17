@@ -23,6 +23,11 @@ export const apiRepository: InventoryRepository = {
   locations: async () => (await request("/api/locations")).locations,
   createLocation: async (name) =>
     (await request("/api/locations", "POST", { name })).location,
+  updateLocation: async (id, name) =>
+    (await request("/api/locations", "PATCH", { id, name })).location,
+  removeLocation: async (id, destinationId) => {
+    await request("/api/locations", "DELETE", { id, destinationId });
+  },
 };
 export const askApi = (
   question: string,

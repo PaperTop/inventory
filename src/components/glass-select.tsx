@@ -116,9 +116,11 @@ export function GlassSelect<T extends string>({
           }
         }}
       >
-        <span className={styles.leading} aria-hidden="true">
-          {icon ?? label}
-        </span>
+        {icon && (
+          <span className={styles.leading} aria-hidden="true">
+            {icon}
+          </span>
+        )}
         <span className={styles.value}>
           {options[selected]?.label ?? "None available"}
         </span>

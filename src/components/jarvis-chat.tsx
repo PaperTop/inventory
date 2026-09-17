@@ -21,6 +21,7 @@ export function JarvisChat({
   saved,
   onSelect,
   onApplyChanges,
+  promptRequest,
 }: {
   items: VisualItem[];
   saved: boolean;
@@ -29,13 +30,28 @@ export function JarvisChat({
     changes: InventoryChange[],
     versions: Record<string, number>,
   ) => Promise<ChangeOutcome>;
+  promptRequest?: { text: string; id: number };
 }) {
   const [prompt, setPrompt] = useState("");
   const [exchanges, setExchanges] = useState<Exchange[]>([]);
   const [busy, setBusy] = useState(false);
   const sending = useRef(false);
+  const lifecycle = useRef(0);
+  useEffect(
+    () => () => {
+      lifecycle.current++;
+    },
+    [],
+  );
   const transcript = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!promptRequest) return;
+    queueMicrotask(() => {
+      setPrompt(promptRequest.text);
+      input.current?.focus();
+    });
+  }, [promptRequest]);
   const currentTarget = useRef({ saved, onApplyChanges });
 
   useEffect(() => {
@@ -51,6 +67,7 @@ export function JarvisChat({
     event.preventDefault();
     const question = prompt.trim();
     if (!question || sending.current) return;
+    const requestLifecycle = lifecycle.current;
     sending.current = true;
     setBusy(true);
     setPrompt("");
@@ -81,6 +98,7 @@ export function JarvisChat({
       result.notice =
         "Jarvis could not reach the AI service. Showing local search results; follow-up context needs AI.";
     }
+    if (requestLifecycle !== lifecycle.current) return;
     if (result.changes?.length) {
       const outcome =
         currentTarget.current.saved === saved
@@ -98,6 +116,7 @@ export function JarvisChat({
         notice: outcome.error,
       };
     }
+    if (requestLifecycle !== lifecycle.current) return;
     setExchanges((current) =>
       current.map((turn, index) =>
         index === current.length - 1 ? { ...turn, result } : turn,
@@ -117,7 +136,7 @@ export function JarvisChat({
 
   return (
     <form
-      className={`${styles.glass} ${styles.assistant}`}
+      className={styles.assistant}
       aria-label="Jarvis"
       onSubmit={ask}
     >

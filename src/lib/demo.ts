@@ -127,5 +127,44 @@ export function demoRepository(): InventoryRepository {
       locations.push(location);
       return structuredClone(location);
     },
+    updateLocation: async (id, name) => {
+      const location = locations.find((row) => row.id === id);
+      if (!location) throw new HttpError(404, "Space not found.");
+      if (
+        locations.some(
+          (row) =>
+            row.id !== id && row.name.toLowerCase() === name.toLowerCase(),
+        )
+      )
+        throw new HttpError(409, "That space already exists.");
+      location.name = name;
+      items = items.map((item) =>
+        item.location_id === id ? { ...item, location_name: name } : item,
+      );
+      return structuredClone(location);
+    },
+    removeLocation: async (id, destinationId) => {
+      const index = locations.findIndex((row) => row.id === id);
+      if (index < 0) throw new HttpError(404, "Space not found.");
+      const destination = locations.find((row) => row.id === destinationId);
+      if (
+        id === destinationId ||
+        (destinationId && !destination) ||
+        (!destination && items.some((item) => item.location_id === id))
+      )
+        throw new HttpError(400, "Choose another space.");
+      items = items.map((item) =>
+        item.location_id === id
+          ? {
+              ...item,
+              location_id: destinationId,
+              location_name: destination?.name ?? null,
+              version: item.version + 1,
+              updated_at: new Date().toISOString(),
+            }
+          : item,
+      );
+      locations.splice(index, 1);
+    },
   };
 }

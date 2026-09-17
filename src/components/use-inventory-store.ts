@@ -76,6 +76,15 @@ export function useInventoryStore(
   const [error, setError] = useState("");
   const queue = useRef<Promise<unknown>>(Promise.resolve());
   const generation = useRef(0);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    const lifecycleGeneration = generation;
+    return () => {
+      mounted.current = false;
+      lifecycleGeneration.current++;
+    };
+  }, []);
   const pendingEdits = useRef<
     {
       key: symbol;
@@ -83,14 +92,14 @@ export function useInventoryStore(
       changes: Partial<VisualItem>;
     }[]
   >([]);
-  function replace(rows: VisualItem[]) {
-    const resolved = resolveHierarchy(rows, locations);
+  function replace(rows: VisualItem[], nextLocations = locations) {
+    const resolved = resolveHierarchy(rows, nextLocations);
     current.current = resolved;
     setItems(resolved);
   }
-  function load(rows: VisualItem[]) {
+  function load(rows: VisualItem[], nextLocations = locations) {
     saved.current = new Map(rows.map((row) => [row.id, row]));
-    replace(rows);
+    replace(rows, nextLocations);
   }
   function confirm(result: VisualItem, completed?: symbol) {
     saved.current.set(result.id, result);
@@ -109,22 +118,32 @@ export function useInventoryStore(
       current.current.map((row) => (row.id === result.id ? visible : row)),
     );
   }
-  async function refresh() {
+  async function refresh(ensureActive: () => void) {
     const rows = (await apiRepository.list("")).map(visualItem);
+    ensureActive();
     saved.current = new Map(rows.map((row) => [row.id, row]));
     replace(rows);
   }
-  function run<T>(operation: () => Promise<T>): Promise<T | undefined> {
+  function run<T>(
+    operation: (ensureActive: () => void) => Promise<T>,
+  ): Promise<T | undefined> {
+    if (!mounted.current) return Promise.resolve(undefined);
     const token = generation.current;
+    const ensureActive = () => {
+      if (!mounted.current || token !== generation.current)
+        throw new Error("This inventory session has ended.");
+    };
     pendingRef.current++;
     setPending(pendingRef.current);
     setError("");
     const next = queue.current
       .then(async () => {
-        if (token !== generation.current) return undefined;
+        if (!mounted.current || token !== generation.current) return undefined;
         try {
-          return await operation();
+          return await operation(ensureActive);
         } catch (e) {
+          if (!mounted.current || token !== generation.current)
+            return undefined;
           generation.current++;
           pendingEdits.current = [];
           const message =
@@ -141,7 +160,7 @@ export function useInventoryStore(
       })
       .finally(() => {
         pendingRef.current--;
-        setPending(pendingRef.current);
+        if (mounted.current) setPending(pendingRef.current);
       });
     queue.current = next;
     return next;
@@ -156,6 +175,7 @@ export function useInventoryStore(
   }, [pending]);
 
   function patch(id: string, changes: Partial<VisualItem>) {
+    if (!mounted.current) return;
     const existing = current.current.find((row) => row.id === id);
     if (!existing) return;
     const next = {
@@ -179,7 +199,7 @@ export function useInventoryStore(
     if (!persisted) return next;
     const key = Symbol();
     pendingEdits.current.push({ key, id, changes });
-    return run(async () => {
+    return run(async (ensureActive) => {
       const base = saved.current.get(id);
       if (!base) throw new Error("Item no longer exists. Reload inventory.");
       const result = visualItem(
@@ -189,6 +209,7 @@ export function useInventoryStore(
           inputOf({ ...base, ...changes }),
         ),
       );
+      ensureActive();
       confirm(result, key);
       return current.current.find((row) => row.id === id);
     });
@@ -200,12 +221,13 @@ export function useInventoryStore(
       );
       return;
     }
-    return run(async () => {
+    return run(async (ensureActive) => {
       // Resolve after earlier queued writes complete; preserve their fields and
       // use their confirmed version when attaching the newly uploaded object.
       const base = saved.current.get(id);
       if (!base) throw new Error("Item no longer exists. Reload inventory.");
       const path = await uploadInventoryPhoto(file, base.user_id);
+      ensureActive();
       const result = visualItem(
         await apiRepository.update(
           id,
@@ -218,11 +240,13 @@ export function useInventoryStore(
       );
       // Retain uploaded objects on ambiguous save failures: the write may have
       // committed even if its response was lost. Never remove a referenced photo.
+      ensureActive();
       confirm(result);
       return result;
     });
   }
   async function create(item: VisualItem) {
+    if (!mounted.current) return;
     try {
       validatePlacement(item, current.current);
     } catch (e) {
@@ -233,14 +257,16 @@ export function useInventoryStore(
       replace(resolveHierarchy([item, ...current.current], locations));
       return item;
     }
-    return run(async () => {
+    return run(async (ensureActive) => {
       const created = visualItem(await apiRepository.create(inputOf(item)));
+      ensureActive();
       saved.current.set(created.id, created);
       replace(resolveHierarchy([created, ...current.current], locations));
       return created;
     });
   }
   async function remove(id: string) {
+    if (!mounted.current) return false;
     if (current.current.some((item) => item.parent_container_id === id)) {
       setError("Move the contents out before deleting this container.");
       return false;
@@ -249,10 +275,11 @@ export function useInventoryStore(
       replace(current.current.filter((item) => item.id !== id));
       return true;
     }
-    return run(async () => {
+    return run(async (ensureActive) => {
       const item = saved.current.get(id);
       if (!item) throw new Error("Item no longer exists.");
       await apiRepository.remove(id, item.version);
+      ensureActive();
       saved.current.delete(id);
       replace(current.current.filter((item) => item.id !== id));
       return true;

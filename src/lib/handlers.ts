@@ -72,6 +72,23 @@ export function handleLocations(
     const { repository } = authorize(request, context);
     if (request.method === "GET")
       return json({ locations: await repository.locations() });
+    if (request.method === "PATCH") {
+      const { id, name } = z
+        .object({ id: z.uuid(), name: z.string().trim().min(1).max(100) })
+        .strict()
+        .parse(await readBody(request));
+      return json({ location: await repository.updateLocation(id, name) });
+    }
+    if (request.method === "DELETE") {
+      const { id, destinationId } = z
+        .object({ id: z.uuid(), destinationId: z.uuid().nullable() })
+        .strict()
+        .parse(await readBody(request));
+      if (id === destinationId)
+        throw new HttpError(400, "Choose a different destination space.");
+      await repository.removeLocation(id, destinationId);
+      return json({ deleted: true });
+    }
     if (request.method === "POST") {
       const { name } = z
         .object({ name: z.string().trim().min(1).max(100) })
