@@ -1,5 +1,5 @@
 import { z } from "zod";
-export const kinds = ["durable", "consumable"] as const;
+export const kinds = ["durable", "consumable", "container"] as const;
 export const statuses = [
   "active",
   "stored",
@@ -18,6 +18,7 @@ const fields = {
   unit: z.string().trim().min(1).max(30).default("item"),
   reorder_threshold: quantity.nullable().default(null),
   location_id: z.uuid().nullable().default(null),
+  parent_container_id: z.uuid().nullable().default(null),
   tags: z
     .array(z.string().trim().min(1).max(40))
     .max(20)
@@ -39,7 +40,8 @@ function durableRule(v: {
   reorder_threshold: number | null;
 }) {
   return (
-    v.kind !== "durable" || (v.quantity === 1 && v.reorder_threshold === null)
+    v.kind === "consumable" ||
+    (v.quantity === 1 && v.reorder_threshold === null)
   );
 }
 export const itemInput = z
@@ -47,23 +49,58 @@ export const itemInput = z
   .strict()
   .refine(
     durableRule,
-    "Durable items must have quantity 1 and no reorder threshold",
+    "Durable items and containers must have quantity 1 and no reorder threshold",
+  )
+  .refine(
+    placementRule,
+    "Choose a location or a container, not both; a root container needs a location",
+  );
+// Shared content validation for chat edits before placement is resolved.
+// Local container IDs are session IDs; persisted placement is validated by itemInput.
+export const itemContentInput = z
+  .object(fields)
+  .omit({
+    location_id: true,
+    parent_container_id: true,
+  })
+  .strict()
+  .refine(
+    durableRule,
+    "Durable items and containers must have quantity 1 and no reorder threshold",
   );
 export const itemUpdate = z
   .object({ ...fields, version: z.number().int().positive() })
   .strict()
   .refine(
     durableRule,
-    "Durable items must have quantity 1 and no reorder threshold",
+    "Durable items and containers must have quantity 1 and no reorder threshold",
+  )
+  .refine(
+    placementRule,
+    "Choose a location or a container, not both; a root container needs a location",
   );
+function placementRule(v: {
+  kind: string;
+  location_id: string | null;
+  parent_container_id?: string | null;
+}) {
+  return (
+    !(v.location_id && v.parent_container_id) &&
+    (v.kind !== "container" || Boolean(v.location_id || v.parent_container_id))
+  );
+}
 export type ItemInput = z.output<typeof itemInput>;
-export type Item = ItemInput & {
+export type Item = Omit<ItemInput, "parent_container_id"> & {
   id: string;
   user_id: string;
   version: number;
   created_at: string;
   updated_at: string;
   location_name: string | null;
+  parent_container_id?: string | null;
+  location_path?: string[];
+  ancestor_ids?: string[];
+  resolved_location_id?: string | null;
 };
 export type Location = { id: string; user_id: string; name: string };
 export const isLowStock = (i: Item) =>
@@ -96,6 +133,7 @@ export function searchInventory(items: readonly Item[], query: string): Item[] {
         item.description,
         item.category,
         item.location_name,
+        ...(item.location_path ?? []),
         ...item.tags,
         JSON.stringify(item.attributes),
       ]

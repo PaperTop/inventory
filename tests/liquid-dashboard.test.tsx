@@ -1,0 +1,721 @@
+// @vitest-environment jsdom
+
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  cleanup,
+  render,
+  screen,
+  within,
+  waitFor,
+} from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import "@testing-library/jest-dom/vitest";
+import { LiquidDashboard } from "../src/components/liquid-dashboard";
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+describe("liquid dashboard interactions", () => {
+  it("adds and edits items from Jarvis and shows the applied records", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal("fetch", async (_path: string, options: RequestInit) => {
+      const body = JSON.parse(options.body as string);
+      return {
+        ok: true,
+        json: async () => ({
+          mode: "ai",
+          answer: "Prepared.",
+          citations: [],
+          changes: body.question.startsWith("Add")
+            ? [
+                {
+                  type: "create",
+                  item: {
+                    name: "Camping tent",
+                    category: "Camping",
+                    location: "College",
+                  },
+                },
+              ]
+            : [
+                {
+                  type: "update",
+                  id: "backpack",
+                  changes: {
+                    name: "Hiking backpack",
+                    tags: ["school", "travel", "everyday", "camping"],
+                  },
+                },
+              ],
+        }),
+      };
+    });
+    render(<LiquidDashboard />);
+    const chat = screen.getByRole("form", { name: "Jarvis" });
+    await user.type(
+      within(chat).getByRole("textbox"),
+      "Add a camping tent in College",
+    );
+    await user.click(
+      within(chat).getByRole("button", { name: "Send question" }),
+    );
+    expect(await within(chat).findByText("Added Camping tent.")).toBeVisible();
+    await user.click(
+      within(chat).getByRole("button", { name: "Open Camping tent" }),
+    );
+    expect(screen.getByRole("textbox", { name: "Item name" })).toHaveValue(
+      "Camping tent",
+    );
+    expect(screen.getByRole("textbox", { name: "Category" })).toHaveValue(
+      "Camping",
+    );
+    await user.type(
+      within(chat).getByRole("textbox"),
+      "Rename my backpack to Hiking backpack and tag it camping",
+    );
+    await user.click(
+      within(chat).getByRole("button", { name: "Send question" }),
+    );
+    expect(
+      await within(chat).findByText("Updated Hiking backpack."),
+    ).toBeVisible();
+    await user.click(
+      within(chat).getByRole("button", { name: "Open Hiking backpack" }),
+    );
+    expect(screen.getByRole("textbox", { name: "Item name" })).toHaveValue(
+      "Hiking backpack",
+    );
+    expect(screen.getByRole("button", { name: "camping" })).toBeVisible();
+  });
+
+  it("does not report success or partially apply an invalid chat batch", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal("fetch", async () => ({
+      ok: true,
+      json: async () => ({
+        mode: "ai",
+        answer: "I saved everything.",
+        citations: [],
+        changes: [
+          { type: "create", item: { name: "Test tent" } },
+          { type: "update", id: "backpack", changes: { quantity: 2 } },
+        ],
+      }),
+    }));
+    render(<LiquidDashboard />);
+    const chat = screen.getByRole("form", { name: "Jarvis" });
+    await user.type(
+      within(chat).getByRole("textbox"),
+      "Add a tent and update my backpack",
+    );
+    await user.click(
+      within(chat).getByRole("button", { name: "Send question" }),
+    );
+    expect(
+      await within(chat).findByText("No items were changed."),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "View Test tent" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(chat).queryByText("I saved everything."),
+    ).not.toBeInTheDocument();
+  });
+  it("closes item details while keeping Jarvis available and reopens on item selection", async () => {
+    const user = userEvent.setup();
+    render(<LiquidDashboard />);
+    await user.click(
+      screen.getByRole("button", { name: "Close item details" }),
+    );
+    expect(
+      screen.queryByRole("complementary", { name: "Item details" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("form", { name: "Jarvis" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "View Laptop" }));
+    expect(
+      screen.getByRole("complementary", { name: "Item details" }),
+    ).toBeVisible();
+    expect(screen.getByRole("textbox", { name: "Item name" })).toHaveValue(
+      "Laptop",
+    );
+  });
+
+  it("sends the current local inventory to Jarvis without requiring Supabase", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal("fetch", async (path: string, options: RequestInit) => {
+      expect(path).toBe("/api/ask/local");
+      expect(JSON.parse(options.body as string)).toMatchObject({
+        question: "Where is my telescope?",
+        items: expect.arrayContaining([
+          expect.objectContaining({ id: "backpack", name: "Backpack" }),
+        ]),
+      });
+      return {
+        ok: true,
+        json: async () => ({
+          answer: "Your telescope is in the attic.",
+          mode: "search",
+          citations: [
+            {
+              id: "saved-telescope",
+              name: "Telescope",
+              description: "",
+              category: "Optics",
+              quantity: 1,
+              unit: "pc",
+              status: "active",
+              condition: "good",
+              location_name: "Attic",
+              tags: [],
+              attributes: {},
+            },
+          ],
+        }),
+      };
+    });
+    render(<LiquidDashboard />);
+    await user.type(
+      screen.getByRole("textbox", { name: "Ask Jarvis" }),
+      "Where is my telescope?",
+    );
+    await user.click(screen.getByRole("button", { name: "Send question" }));
+    expect(
+      await screen.findByText("Your telescope is in the attic."),
+    ).toBeVisible();
+    expect(screen.getByText("Telescope")).toBeVisible();
+    expect(screen.getByText(/Local inventory/)).toBeVisible();
+  });
+
+  it("clearly labels local answers and searches items outside the active location", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal("fetch", async () => ({
+      ok: false,
+      json: async () => ({ error: "Please sign in" }),
+    }));
+    render(<LiquidDashboard />);
+    await user.click(
+      within(
+        screen.getByRole("navigation", { name: "Inventory locations" }),
+      ).getByRole("button", { name: "Car" }),
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "Ask Jarvis" }),
+      "Where is my backpack?",
+    );
+    await user.click(screen.getByRole("button", { name: "Send question" }));
+    expect(await screen.findByText(/Local inventory/)).toBeVisible();
+    expect(screen.getByText(/Backpack — 1 pc; College/)).toBeVisible();
+  });
+
+  it("opens a cited item and keeps previous questions when asking a follow-up", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal("fetch", async () => {
+      throw new Error("offline");
+    });
+    render(<LiquidDashboard />);
+    const chat = screen.getByRole("form", { name: "Jarvis" });
+    await user.type(
+      within(chat).getByRole("textbox"),
+      "Do I have anything to take pictures?",
+    );
+    await user.click(
+      within(chat).getByRole("button", { name: "Send question" }),
+    );
+    await user.click(
+      await within(chat).findByRole("button", { name: "Open Camera" }),
+    );
+    expect(screen.getByRole("textbox", { name: "Item name" })).toHaveValue(
+      "Camera",
+    );
+    await user.type(within(chat).getByRole("textbox"), "Pack me for camping");
+    await user.click(
+      within(chat).getByRole("button", { name: "Send question" }),
+    );
+    expect(
+      await within(chat).findByText(/starting packing list/),
+    ).toBeVisible();
+    expect(
+      within(chat).getByText("Do I have anything to take pictures?"),
+    ).toBeVisible();
+    expect(within(chat).getByRole("textbox")).toHaveValue("");
+  });
+
+  it("adds trimmed tags with Enter or the add button and ignores duplicates", async () => {
+    const user = userEvent.setup();
+    render(<LiquidDashboard />);
+    const input = screen.getByRole("textbox", { name: "New tag" });
+    await user.type(input, "  camping  {Enter}");
+    expect(screen.getByRole("button", { name: "camping" })).toBeVisible();
+    expect(input).toHaveValue("");
+    await user.type(input, "CAMPING");
+    await user.click(screen.getByRole("button", { name: "Add tag" }));
+    expect(screen.getAllByRole("button", { name: /^camping$/i })).toHaveLength(
+      1,
+    );
+    await user.type(input, "hiking");
+    await user.click(screen.getByRole("button", { name: "Add tag" }));
+    await user.click(screen.getByRole("button", { name: "View Laptop" }));
+    expect(
+      screen.queryByRole("button", { name: "hiking" }),
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "View Backpack" }));
+    expect(screen.getByRole("button", { name: "hiking" })).toBeVisible();
+  });
+
+  it("shows past tags when focusing tag input and allows adding via suggestion or custom input", async () => {
+    const user = userEvent.setup();
+    render(<LiquidDashboard />);
+    const input = screen.getByRole("textbox", { name: "New tag" });
+
+    // Focus tag input to open past tags popover
+    await user.click(input);
+    expect(screen.getByRole("region", { name: "Past tags" })).toBeVisible();
+
+    // "creative" is a past tag from camera that Backpack does not have yet
+    const creativeChip = screen.getByRole("button", {
+      name: "Select tag creative",
+    });
+    expect(creativeChip).toBeVisible();
+
+    // Click to add past tag
+    await user.click(creativeChip);
+    expect(screen.getByRole("button", { name: "creative" })).toBeVisible();
+
+    // Type a custom new tag and click plus button
+    await user.type(input, "waterproof");
+    await user.click(screen.getByRole("button", { name: "Add tag" }));
+    expect(screen.getByRole("button", { name: "waterproof" })).toBeVisible();
+  });
+
+  it("creates a place in a dialog with its chosen icon and highlight", async () => {
+    const user = userEvent.setup();
+    render(<LiquidDashboard />);
+    await user.click(screen.getByRole("button", { name: "Add place" }));
+    const dialog = screen.getByRole("dialog", { name: "Add a place" });
+    await user.type(within(dialog).getByLabelText("Place name"), "Studio");
+    await user.click(within(dialog).getByRole("radio", { name: "Camera" }));
+    await user.click(within(dialog).getByRole("radio", { name: "Rose" }));
+    await user.click(
+      within(dialog).getByRole("button", { name: "Create place" }),
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    const place = within(
+      screen.getByRole("navigation", { name: "Inventory locations" }),
+    ).getByRole("button", { name: "Studio" });
+    expect(place).toHaveAttribute("data-place-icon", "Camera");
+    expect(place).toHaveStyle({ "--place-color": "#f59ab8" });
+    expect(screen.getByRole("button", { name: "Add place" })).toHaveFocus();
+  });
+
+  it("supports keyboard selection and dismissing the glass filter", async () => {
+    const user = userEvent.setup();
+    render(<LiquidDashboard />);
+    const filter = screen.getByRole("combobox", { name: "Filter items" });
+    filter.focus();
+    await user.keyboard("{ArrowDown}{End}{Enter}");
+    expect(filter).toHaveTextContent("Low stock");
+    expect(filter).toHaveAttribute("aria-expanded", "false");
+    await user.click(filter);
+    expect(screen.getByRole("listbox", { name: "Filter items" })).toBeVisible();
+    await user.keyboard("{Escape}");
+    expect(filter).toHaveFocus();
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    await user.click(filter);
+    await user.click(screen.getByRole("textbox", { name: "Search items" }));
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  });
+
+  it("edits notes directly and deletes the selected item", async () => {
+    const user = userEvent.setup();
+    render(<LiquidDashboard />);
+    const notes = screen.getByRole("textbox", { name: "Notes" });
+    expect(notes).toBeEnabled();
+    await user.clear(notes);
+    await user.type(notes, "Packed for tomorrow.");
+    await user.click(screen.getByRole("button", { name: "View Laptop" }));
+    await user.click(screen.getByRole("button", { name: "View Backpack" }));
+    expect(screen.getByRole("textbox", { name: "Notes" })).toHaveValue(
+      "Packed for tomorrow.",
+    );
+    for (const name of ["Delete", "Duplicate", "Favorite", "Missing"]) {
+      expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
+    }
+    await user.click(screen.getByRole("button", { name: "Delete item" }));
+    expect(
+      screen.queryByRole("button", { name: "View Backpack" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("starts item editing when a detail field is clicked", async () => {
+    const user = userEvent.setup();
+    render(<LiquidDashboard />);
+
+    const category = screen.getByRole("textbox", { name: "Category" });
+    await user.click(category);
+
+    await user.clear(category);
+    await user.type(category, "Travel");
+    expect(category).toHaveValue("Travel");
+  });
+
+  it("replaces only the selected item's photo", async () => {
+    const user = userEvent.setup();
+    render(<LiquidDashboard />);
+    const file = new File(["photo"], "backpack.png", { type: "image/png" });
+    await user.upload(screen.getByLabelText("Upload item photo"), file);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("img", { name: "Backpack" }).getAttribute("src"),
+      ).toMatch(/^data:image\/png;base64,/),
+    );
+    const thumbnail = screen
+      .getByRole("button", { name: "View Backpack" })
+      .querySelector("img");
+    expect(thumbnail?.getAttribute("src")).toBe(
+      screen.getByRole("img", { name: "Backpack" }).getAttribute("src"),
+    );
+    await user.click(screen.getByRole("button", { name: "View Laptop" }));
+    expect(
+      screen.getByRole("img", { name: "Laptop" }).getAttribute("src"),
+    ).not.toMatch(/^data:/);
+  });
+
+  it("rejects unsupported and oversized photos without replacing the image", async () => {
+    const user = userEvent.setup({ applyAccept: false });
+    render(<LiquidDashboard />);
+    const original = screen
+      .getByRole("img", { name: "Backpack" })
+      .getAttribute("src");
+    const input = screen.getByLabelText("Upload item photo");
+    await user.upload(
+      input,
+      new File(["text"], "notes.txt", { type: "text/plain" }),
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Choose a JPG, PNG, or WebP image",
+    );
+    await user.upload(
+      input,
+      new File([new Uint8Array(5 * 1024 * 1024 + 1)], "large.png", {
+        type: "image/png",
+      }),
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent("5 MB or smaller");
+    expect(screen.getByRole("img", { name: "Backpack" })).toHaveAttribute(
+      "src",
+      original,
+    );
+  });
+
+  it("adds a place from the left rail without creating an item", async () => {
+    const user = userEvent.setup();
+    render(<LiquidDashboard />);
+    await user.click(screen.getByRole("button", { name: "Add place" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "Place name" }),
+      "Garage",
+    );
+    await user.click(screen.getByRole("button", { name: "Create place" }));
+    const navigation = screen.getByRole("navigation", {
+      name: "Inventory locations",
+    });
+    expect(
+      within(navigation).getByRole("button", { name: "Garage" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("0 items")).toBeVisible();
+    await user.click(within(navigation).getByRole("button", { name: "Home" }));
+    expect(
+      screen.queryByRole("button", { name: "View New item" }),
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole("combobox", { name: "Item location" }));
+    await user.click(screen.getByRole("option", { name: "Garage" }));
+    await user.click(
+      within(navigation).getByRole("button", { name: "Garage" }),
+    );
+    expect(screen.getByRole("button", { name: "View Backpack" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Add item" }));
+    expect(
+      screen.getByRole("combobox", { name: "Item location" }),
+    ).toHaveTextContent("Garage");
+  });
+
+  it("rejects blank and duplicate places and allows cancelling", async () => {
+    const user = userEvent.setup();
+    render(<LiquidDashboard />);
+    await user.click(screen.getByRole("button", { name: "Add place" }));
+    const name = screen.getByRole("textbox", { name: "Place name" });
+    await user.type(name, "   ");
+    await user.click(screen.getByRole("button", { name: "Create place" }));
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Place name is required",
+    );
+    await user.clear(name);
+    await user.type(name, " college ");
+    await user.click(screen.getByRole("button", { name: "Create place" }));
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "That place already exists",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Cancel adding place" }),
+    );
+    expect(
+      screen.queryByRole("textbox", { name: "Place name" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("opens a custom place editor on double-click and saves its fields", async () => {
+    const user = userEvent.setup();
+    render(<LiquidDashboard />);
+    await user.click(screen.getByRole("button", { name: "Add place" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "Place name" }),
+      "Studio",
+    );
+    await user.click(screen.getByRole("button", { name: "Create place" }));
+
+    const navigation = screen.getByRole("navigation", {
+      name: "Inventory locations",
+    });
+    await user.dblClick(
+      within(navigation).getByRole("button", { name: "Studio" }),
+    );
+    const dialog = screen.getByRole("dialog", { name: "Edit place" });
+    const name = within(dialog).getByRole("textbox", { name: "Place name" });
+    await user.clear(name);
+    await user.type(name, "Workshop");
+    await user.click(within(dialog).getByRole("radio", { name: "Camera" }));
+    await user.click(within(dialog).getByRole("radio", { name: "Rose" }));
+    await user.click(
+      within(dialog).getByRole("button", { name: "Save changes" }),
+    );
+
+    const edited = within(navigation).getByRole("button", { name: "Workshop" });
+    expect(edited).toHaveAttribute("data-place-icon", "Camera");
+    expect(edited).toHaveStyle({ "--place-color": "#f59ab8" });
+    expect(
+      screen.queryByRole("button", { name: "Studio" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("deletes a custom place from its editor", async () => {
+    const user = userEvent.setup();
+    render(<LiquidDashboard />);
+    await user.click(screen.getByRole("button", { name: "Add place" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "Place name" }),
+      "Studio",
+    );
+    await user.click(screen.getByRole("button", { name: "Create place" }));
+
+    const navigation = screen.getByRole("navigation", {
+      name: "Inventory locations",
+    });
+    await user.dblClick(
+      within(navigation).getByRole("button", { name: "Studio" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Delete place" }));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(
+      within(navigation).queryByRole("button", { name: "Studio" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("All spaces")).toBeVisible();
+  });
+
+  it("keeps an active item filter clearable when responsive controls reflow", async () => {
+    const user = userEvent.setup();
+    render(<LiquidDashboard />);
+
+    await user.click(screen.getByRole("combobox", { name: "Filter items" }));
+    await user.click(screen.getByRole("option", { name: "Low stock" }));
+
+    const clearFilter = screen.getByRole("button", {
+      name: "Clear item filter",
+    });
+    expect(clearFilter).toBeVisible();
+
+    await user.click(clearFilter);
+
+    expect(
+      screen.getByRole("combobox", { name: "Filter items" }),
+    ).toHaveTextContent("All items");
+    expect(screen.getByRole("button", { name: "View Backpack" })).toBeVisible();
+  });
+
+  it("rejects a blank item name and keeps the saved item named", async () => {
+    const user = userEvent.setup();
+    render(<LiquidDashboard />);
+
+    const name = screen.getByRole("textbox", { name: "Item name" });
+    await user.click(name);
+    await user.clear(name);
+    await user.tab();
+
+    expect(name).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Item name is required",
+    );
+    expect(screen.getByRole("button", { name: "View Backpack" })).toBeVisible();
+  });
+
+  it("saves an item name on Enter without editor action buttons", async () => {
+    const user = userEvent.setup();
+    render(<LiquidDashboard />);
+    const name = screen.getByRole("textbox", { name: "Item name" });
+    await user.click(name);
+    await user.clear(name);
+    await user.type(name, "Travel bag{Enter}");
+    expect(
+      screen.getByRole("button", { name: "View Travel bag" }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: /^(Edit|Move|Done)$/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("changes a durable item's quantity and prevents negative quantities", async () => {
+    const user = userEvent.setup();
+    render(<LiquidDashboard />);
+
+    const decrease = screen.getByRole("button", { name: "Decrease quantity" });
+    const increase = screen.getByRole("button", { name: "Increase quantity" });
+    await user.click(increase);
+    expect(within(decrease.parentElement!).getByText("2")).toBeVisible();
+    await user.click(decrease);
+
+    expect(within(decrease.parentElement!).getByText("1")).toBeVisible();
+    await user.click(decrease);
+    expect(within(decrease.parentElement!).getByText("0")).toBeVisible();
+    expect(decrease).toBeDisabled();
+    await user.click(increase);
+    expect(decrease).toBeEnabled();
+    await user.click(increase);
+    await user.click(screen.getByRole("button", { name: "View Laptop" }));
+    await user.click(screen.getByRole("button", { name: "View Backpack" }));
+    expect(
+      within(
+        screen.getByRole("button", { name: "Decrease quantity" })
+          .parentElement!,
+      ).getByText("2"),
+    ).toBeVisible();
+  });
+
+  it("moves an item directly through its location field", async () => {
+    const user = userEvent.setup();
+    render(<LiquidDashboard />);
+
+    await user.click(screen.getByRole("button", { name: "View Umbrella" }));
+
+    const destination = screen.getByRole("combobox", {
+      name: "Item location",
+    });
+    expect(destination).toHaveTextContent("Car");
+    expect(
+      screen.getByRole("combobox", { name: "Item location" }),
+    ).toHaveTextContent("Car");
+
+    await user.click(destination);
+    await user.click(screen.getByRole("option", { name: "Home" }));
+
+    expect(
+      screen.getByRole("combobox", { name: "Item location" }),
+    ).toHaveTextContent("Home");
+  });
+
+  it("uses a glass control for the item location dropdown", async () => {
+    const user = userEvent.setup();
+    render(<LiquidDashboard />);
+
+    const location = screen.getByRole("combobox", { name: "Item location" });
+    expect(location.tagName).toBe("BUTTON");
+
+    await user.click(location);
+    expect(
+      screen.getByRole("listbox", { name: "Item location" }),
+    ).toBeVisible();
+    expect(screen.getByRole("option", { name: "College" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await user.click(screen.getByRole("option", { name: "Home" }));
+    expect(location).toHaveTextContent("Home");
+  });
+
+  it("exposes accessible duplicate and delete icon buttons", () => {
+    render(<LiquidDashboard />);
+
+    expect(
+      screen.getByRole("button", { name: "Duplicate item" }),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "Delete item" })).toBeVisible();
+  });
+
+  it("opens nested container contents with an inherited breadcrumb", async () => {
+    const user = userEvent.setup();
+    render(<LiquidDashboard />);
+
+    await user.click(screen.getByRole("button", { name: "Open Cabinet" }));
+    const cabinet = screen.getByRole("region", { name: "Cabinet contents" });
+    expect(cabinet).toBeVisible();
+
+    await user.click(
+      within(cabinet).getByRole("button", { name: "Open Drawer" }),
+    );
+    expect(
+      screen.getByRole("region", { name: "Drawer contents" }),
+    ).toBeVisible();
+    expect(screen.getByText("Bedroom → Cabinet → Drawer")).toBeVisible();
+    expect(
+      within(screen.getByRole("region", { name: "Drawer contents" })).getByRole(
+        "button",
+        { name: "View Camera" },
+      ),
+    ).toBeVisible();
+  });
+
+  it("moves an item into a container and shows it inside the open panel", async () => {
+    const user = userEvent.setup();
+    render(<LiquidDashboard />);
+
+    await user.click(screen.getByRole("button", { name: "View Backpack" }));
+    const destination = screen.getByRole("combobox", {
+      name: "Item location",
+    });
+    await user.click(destination);
+    await user.click(screen.getByRole("option", { name: "Bedroom → Cabinet" }));
+
+    expect(destination).toHaveTextContent("Bedroom → Cabinet");
+    await user.click(screen.getByRole("button", { name: "Open Cabinet" }));
+    expect(
+      within(
+        screen.getByRole("region", { name: "Cabinet contents" }),
+      ).getByRole("button", { name: "View Backpack" }),
+    ).toBeVisible();
+  });
+
+  it("creates a nested container from an open container", async () => {
+    const user = userEvent.setup();
+    render(<LiquidDashboard />);
+
+    await user.click(screen.getByRole("button", { name: "Open Cabinet" }));
+    const cabinet = screen.getByRole("region", { name: "Cabinet contents" });
+    await user.click(
+      within(cabinet).getByRole("button", { name: "Add container" }),
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Open New container" }),
+    ).toBeVisible();
+    expect(screen.getByRole("textbox", { name: "Item name" })).toHaveValue(
+      "New container",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Open New container" }),
+    );
+    expect(
+      screen.getByRole("region", { name: "New container contents" }),
+    ).toBeVisible();
+  });
+});

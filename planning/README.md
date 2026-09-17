@@ -4,6 +4,10 @@ This document is the top-down map for Inventory. It explains the product, every 
 
 The canonical project is currently at `/Users/jadenhuang/Inventory`. This guide should live in the project's `planning/` directory and stay current as architecture decisions change.
 
+## Photo storage update — 2026-09-16
+
+Private photo upload/read support is implemented for saved inventory. Apply all three migrations, including `202609160001_private_photos.sql`. Supabase configuration and a signed-in session are still required for persistent uploads; sample photos remain session-only. See the README’s private-photo setup, retention policy, and hosted smoke test. Hosted verification is pending.
+
 ## 1. Product definition
 
 Inventory is a private, user-owned record of physical belongings. A person can add things manually, organize them by location and tags, track consumable quantities, search the collection, and ask a read-only assistant questions about what is already theirs.
@@ -24,7 +28,7 @@ The product has one source of truth: the manually confirmed inventory database. 
 
 ### Deliberately deferred
 
-Receipt ingestion, camera capture, object detection, image storage, embeddings, semantic search, sharing, price tracking, purchase automation, notifications, mobile apps, and autonomous writes are later projects. They should only be added after the manual inventory loop is useful and measured.
+Receipt ingestion, camera capture, object detection, embeddings, semantic search, sharing, price tracking, purchase automation, notifications, mobile apps, and autonomous writes are later projects. They should only be added after the manual inventory loop is useful and measured.
 
 ## 2. System at a glance
 
@@ -99,38 +103,23 @@ LangGraph and LangChain do not replace ordinary application code. Database searc
 
 ### Pages
 
-| Page            | Purpose                                 | Access                                         |
-| --------------- | --------------------------------------- | ---------------------------------------------- |
-| `/`             | Account gate or authenticated dashboard | Public shell; dashboard requires session       |
-| `/demo`         | In-memory preview with sample items     | Public, clearly labeled, never production data |
-| `/auth/confirm` | Verify an email token and return home   | Public callback                                |
+| Page            | Purpose                                 | Access                     |
+| --------------- | --------------------------------------- | -------------------------- |
+| `/`             | Liquid-glass dashboard with sample data | Public visual prototype    |
+| `/demo`         | Redirect to the main dashboard          | Public compatibility route |
+| `/auth/confirm` | Verify an email token and return home   | Public callback            |
 
 ### Dashboard responsibilities
 
-`src/components/dashboard.tsx` owns browser interaction state:
+`src/components/liquid-dashboard.tsx` owns the current visual prototype and browser interaction state:
 
-- Load items and locations.
-- Debounce search requests.
-- Filter all items, durables, consumables, and low stock.
-- Open the item editor.
-- Create and edit items.
-- Ask a read-only question.
-- Display source citations.
-- Show loading, empty, error, and saved states.
+- Present the local dummy inventory and locations.
+- Search, sort, and filter the visible items.
+- Select, edit, move, duplicate, and delete local items.
+- Present responsive desktop, tablet, and mobile layouts.
+- Keep the UI boundary ready for the later Supabase and account connection.
 
-The dashboard must not contain SQL, Supabase service keys, ownership decisions, or model prompts. It talks to `browser-api.ts` and receives already validated records.
-
-`src/components/item-form.tsx` owns the editor:
-
-- Durable items force quantity `1` and unit `item`.
-- Consumables accept nonnegative decimal quantities and a unit.
-- A low-stock threshold is optional for consumables.
-- Tags are entered as comma-separated text and normalized by the domain contract.
-- Flexible attributes are an optional JSON object.
-- A location can be selected or created.
-- The form submits one complete editable item shape so optimistic version checks are straightforward.
-
-`src/components/auth-form.tsx` owns sign-up and sign-in. It never stores passwords in application state beyond the SDK call and never sends credentials to an application endpoint.
+The dashboard must not contain SQL, Supabase service keys, or ownership decisions. Existing repository, API, and authentication groundwork remains separate for later integration.
 
 ### UI behavior rules
 
@@ -365,7 +354,7 @@ Test that the LangChain adapter is disabled by default, receives no tools, perfo
 
 ### Browser smoke
 
-Use `/demo` to verify the rendered dashboard, add a consumable, create a location, search, filter low stock, ask a question, open a citation, edit an item, and delete an item. Use a configured Supabase project for account and RLS smoke tests.
+Use `/` to verify the rendered liquid-glass dashboard, search and filter items, change locations, edit an item, duplicate it, and delete it. Use a configured Supabase project for account and RLS smoke tests after connecting the prototype to the backend.
 
 ## 11. Local setup and deployment
 
@@ -377,7 +366,7 @@ npm ci
 npm run dev
 ```
 
-Open `http://localhost:3000/demo`.
+Open `http://localhost:3000`.
 
 ### Supabase setup
 

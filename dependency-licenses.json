@@ -1,12 +1,12 @@
 {
-  "checked": "2026-09-13",
+  "checked": "2026-09-15",
   "scope": "Direct installed dependencies; consult package-lock and packaged notices for transitive dependencies.",
   "dependencies": [
     {
-      "package": "@fontsource/pixelify-sans",
-      "version": "5.3.0",
-      "license": "OFL-1.1",
-      "scope": "runtime"
+      "package": "@electric-sql/pglite",
+      "version": "0.5.8",
+      "license": "Apache-2.0",
+      "scope": "development"
     },
     {
       "package": "@langchain/anthropic",
@@ -17,6 +17,12 @@
     {
       "package": "@langchain/core",
       "version": "1.2.11",
+      "license": "MIT",
+      "scope": "runtime"
+    },
+    {
+      "package": "@langchain/google",
+      "version": "0.2.6",
       "license": "MIT",
       "scope": "runtime"
     },
@@ -33,6 +39,12 @@
       "scope": "runtime"
     },
     {
+      "package": "@phosphor-icons/react",
+      "version": "2.1.10",
+      "license": "MIT",
+      "scope": "runtime"
+    },
+    {
       "package": "@supabase/ssr",
       "version": "0.12.7",
       "license": "MIT",
@@ -43,48 +55,6 @@
       "version": "2.116.0",
       "license": "MIT",
       "scope": "runtime"
-    },
-    {
-      "package": "lucide-react",
-      "version": "1.45.0",
-      "license": "ISC",
-      "scope": "runtime"
-    },
-    {
-      "package": "next",
-      "version": "16.3.5",
-      "license": "MIT",
-      "scope": "runtime"
-    },
-    {
-      "package": "pixelarticons",
-      "version": "2.4.1",
-      "license": "MIT",
-      "scope": "runtime"
-    },
-    {
-      "package": "react",
-      "version": "19.3.0",
-      "license": "MIT",
-      "scope": "runtime"
-    },
-    {
-      "package": "react-dom",
-      "version": "19.3.0",
-      "license": "MIT",
-      "scope": "runtime"
-    },
-    {
-      "package": "zod",
-      "version": "4.6.4",
-      "license": "MIT",
-      "scope": "runtime"
-    },
-    {
-      "package": "@electric-sql/pglite",
-      "version": "0.5.8",
-      "license": "Apache-2.0",
-      "scope": "development"
     },
     {
       "package": "@types/node",
@@ -117,10 +87,28 @@
       "scope": "development"
     },
     {
+      "package": "next",
+      "version": "16.3.5",
+      "license": "MIT",
+      "scope": "runtime"
+    },
+    {
       "package": "prettier",
       "version": "3.9.6",
       "license": "MIT",
       "scope": "development"
+    },
+    {
+      "package": "react",
+      "version": "19.3.0",
+      "license": "MIT",
+      "scope": "runtime"
+    },
+    {
+      "package": "react-dom",
+      "version": "19.3.0",
+      "license": "MIT",
+      "scope": "runtime"
     },
     {
       "package": "typescript",
@@ -133,6 +121,12 @@
       "version": "5.0.0",
       "license": "MIT",
       "scope": "development"
+    },
+    {
+      "package": "zod",
+      "version": "4.6.4",
+      "license": "MIT",
+      "scope": "runtime"
     }
   ]
 }

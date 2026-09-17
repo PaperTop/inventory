@@ -22,7 +22,11 @@ This is a project-level task backlog, not code-level implementation instructions
 - Keep model credentials server-only; use deterministic search initially in production.
 - Before implementation, read applicable Next.js guidance in `node_modules/next/dist/docs/` as required by `AGENTS.md`.
 
-## Phases 1–2: completed baseline
+## Current setup update (2026-09-14)
+
+The backend baseline remains implemented, but the replacement liquid dashboard currently uses in-memory sample data and its own local Ask matching. Restore account screens and connect inventory, location, and Ask API calls before treating the app as a persistent MVP. `/demo` currently redirects to `/`. Node 22 is pinned in `.nvmrc`; `npm run release:check` runs the full local release gate. Hosted configuration and verification remain pending.
+
+## Phases 1–2: backend baseline
 
 Retain the completed MVP and read-only assistant described in the user's roadmap. Existing code includes authenticated inventory CRUD, lexical search, model adapters, bounded generation and citation validation, and deterministic fallback.
 
@@ -30,7 +34,7 @@ Phase 4 also has partial foundations: `inventory_observations`, its uniqueness c
 
 ## Phase 3: production setup — next
 
-- [ ] **3.1 Establish the deployment repository and release checks.** This checkout is not currently a Git repository. Locate its intended remote or initialize version control for this project, excluding secrets and generated output. Retain `.github/workflows/ci.yml`; run `npm run check`, `npm run build`, and `npm run format:check`. Done when a reproducible release candidate passes checks and can be imported by the deployment service.
+- [ ] **3.1 Establish the deployment repository and release checks.** Git is initialized with remote `https://github.com/PaperTop/inventory.git`. Review and commit the current working changes to establish a release candidate, excluding secrets and generated output. Retain `.github/workflows/ci.yml`; run `npm run check`, `npm run build`, and `npm run format:check`. Done when a reproducible release candidate passes checks and can be imported by the deployment service.
 - [ ] **3.2 Connect hosted Supabase and apply the existing migration.** Configure the project URL and publishable key, apply `supabase/migrations/202609130001_inventory.sql`, and verify tables, RLS, constraints, and search RPC. Keep preview/test data separate from production. Done when the app can authenticate and persist owned records against the hosted database.
 - [ ] **3.3 Configure email confirmation and Auth URLs.** Configure the confirmation template, development/preview callback URLs, and intended production callback. Exercise signup, confirmation, expired/invalid links, login, and logout through `src/app/auth/confirm/route.ts` and the existing auth UI. Done when valid confirmations establish a session and invalid links fail safely.
 - [ ] **3.4 Extend hosted integration testing to two users.** Extend `scripts/smoke-supabase.mjs` or add a companion script using two disposable confirmed accounts. Test cross-user reads, edits, deletes, location references, search results, and Ask citations through the deployed app as well as database access. Verify stale writes and unauthenticated requests fail. Clean up only test-owned records. Done when both directions of isolation pass; the existing one-user smoke test alone is insufficient.

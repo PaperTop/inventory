@@ -1,7 +1,9 @@
 import { ChatAnthropic } from "@langchain/anthropic";
 import { ChatOpenAI } from "@langchain/openai";
+import { ChatGoogle } from "@langchain/google";
 import {
   createReadOnlyAnswerGraph,
+  inventoryToolDefinitions,
   type ReadOnlyChatModel,
 } from "./answer-graph";
 import type { AnswerProvider } from "./ask";
@@ -13,6 +15,11 @@ const MODEL_LIMITS = {
 } as const;
 
 export type ModelConfiguration =
+  | ({
+      provider: "google";
+      model: string;
+      apiKey: string;
+    } & typeof MODEL_LIMITS)
   | ({
       provider: "openai-compatible";
       model: string;
@@ -30,6 +37,16 @@ export type ModelFactory = (
 ) => ReadOnlyChatModel;
 
 const createLangChainModel: ModelFactory = (configuration) => {
+  if (configuration.provider === "google") {
+    const model = new ChatGoogle({
+      model: configuration.model,
+      apiKey: configuration.apiKey,
+      platformType: "gai",
+      maxRetries: configuration.maxRetries,
+      maxOutputTokens: configuration.maxTokens,
+    }).bindTools(inventoryToolDefinitions);
+    return { invoke: (messages, options) => model.invoke(messages, options) };
+  }
   if (configuration.provider === "openai-compatible") {
     const model = new ChatOpenAI({
       model: configuration.model,
@@ -41,7 +58,8 @@ const createLangChainModel: ModelFactory = (configuration) => {
       configuration: { baseURL: configuration.baseURL },
     });
     return {
-      invoke: (messages) => model.invoke(messages),
+      invoke: (messages, options) =>
+        model.bindTools(inventoryToolDefinitions).invoke(messages, options),
     };
   }
 
@@ -54,7 +72,8 @@ const createLangChainModel: ModelFactory = (configuration) => {
     clientOptions: { timeout: configuration.timeout },
   });
   return {
-    invoke: (messages) => model.invoke(messages),
+    invoke: (messages, options) =>
+      model.bindTools(inventoryToolDefinitions).invoke(messages, options),
   };
 };
 
@@ -62,6 +81,15 @@ export function configuredProvider(
   modelFactory: ModelFactory = createLangChainModel,
 ): AnswerProvider | undefined {
   const choice = process.env.AI_PROVIDER;
+
+  if (choice === "google") {
+    const apiKey = process.env.AI_API_KEY;
+    const model = process.env.AI_MODEL;
+    if (!apiKey || !model) return undefined;
+    return createReadOnlyAnswerGraph(
+      modelFactory({ provider: "google", model, apiKey, ...MODEL_LIMITS }),
+    );
+  }
 
   if (choice === "openai-compatible") {
     const baseURL = process.env.AI_BASE_URL;

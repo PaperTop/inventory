@@ -88,3 +88,25 @@ it("requires an explicit model and API key for Claude", () => {
     }),
   ).toBeUndefined();
 });
+
+it("supports the native Google adapter for signature-preserving Gemini tool calls", () => {
+  vi.stubEnv("AI_PROVIDER", "google");
+  vi.stubEnv("AI_API_KEY", "test-key");
+  vi.stubEnv("AI_MODEL", "gemini-test-model");
+  let configuration: ModelConfiguration | undefined;
+  const provider = configuredProvider((input) => {
+    configuration = input;
+    return {
+      async invoke() {
+        return new AIMessage("{}");
+      },
+    };
+  });
+  expect(provider).toBeDefined();
+  expect(configuration).toMatchObject({
+    provider: "google",
+    model: "gemini-test-model",
+    apiKey: "test-key",
+    maxRetries: 0,
+  });
+});

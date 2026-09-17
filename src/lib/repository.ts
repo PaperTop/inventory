@@ -8,9 +8,15 @@ function check(error: DbError) {
   if (error.code === "23505")
     throw new HttpError(409, "That record already exists.");
   if (error.code === "23503")
-    throw new HttpError(400, "The selected location is unavailable.");
+    throw new HttpError(
+      400,
+      "Move the contents before deleting a container, and choose an available location or container.",
+    );
   if (error.code === "23514" || error.code === "22P02")
-    throw new HttpError(400, "The inventory values are invalid.");
+    throw new HttpError(
+      400,
+      "Invalid placement or inventory values. A container cannot be placed inside itself or its contents.",
+    );
   if (error.code === "42501")
     throw new HttpError(403, "You do not have access to this record.");
   throw new HttpError(
@@ -23,6 +29,13 @@ export function createRepository(
   userId: string,
 ): InventoryRepository {
   async function hydrate(row: Omit<Item, "location_name">): Promise<Item> {
+    const { data: snapshot, error: snapshotError } =
+      await client.rpc("inventory_snapshot");
+    check(snapshotError);
+    const hydrated = (snapshot as Item[] | null)?.find(
+      (item) => item.id === row.id,
+    );
+    if (hydrated) return hydrated;
     let location_name = null;
     if (row.location_id) {
       const { data, error } = await client
@@ -59,6 +72,11 @@ export function createRepository(
   }
   return {
     async list(query) {
+      if (!query.trim()) {
+        const { data, error } = await client.rpc("inventory_snapshot");
+        check(error);
+        return (data ?? []) as Item[];
+      }
       const { data, error } = await client.rpc("search_inventory", {
         search_query: query,
         result_limit: 200,

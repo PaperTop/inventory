@@ -8,7 +8,7 @@ export function buildInventorySlots(items: Item[], _minimum: number) {
 
 export type InventoryViewOptions = {
   query: string;
-  kind: "all" | "durable" | "consumable" | "low";
+  kind: "all" | "durable" | "consumable" | "container" | "low";
   location: string;
   sort: "recent" | "name" | "quantity";
 };
@@ -21,17 +21,25 @@ export function filterInventory(
   const filtered = searched.filter((item) => {
     const kindMatches =
       options.kind === "all" ||
-      (options.kind === "low"
-        ? isLowStock(item)
-        : item.kind === options.kind);
+      (options.kind === "low" ? isLowStock(item) : item.kind === options.kind);
     const locationMatches =
       options.location === "all" || item.location_name === options.location;
     return kindMatches && locationMatches;
   });
 
-  return filtered.sort((left, right) => {
-    if (options.sort === "name") return left.name.localeCompare(right.name);
-    if (options.sort === "quantity") return right.quantity - left.quantity;
+  return sortInventory(filtered, options.sort);
+}
+
+export function sortInventory<T extends Item>(
+  items: readonly T[],
+  sort: InventoryViewOptions["sort"],
+) {
+  return [...items].sort((left, right) => {
+    const containerOrder =
+      Number(right.kind === "container") - Number(left.kind === "container");
+    if (containerOrder) return containerOrder;
+    if (sort === "name") return left.name.localeCompare(right.name);
+    if (sort === "quantity") return right.quantity - left.quantity;
     return Date.parse(right.updated_at) - Date.parse(left.updated_at);
   });
 }

@@ -1,9 +1,16 @@
 import { z } from "zod";
-import { askInventory, questionInput, type AnswerProvider } from "./ask";
+import {
+  askInventory,
+  inventoryFactInput,
+  questionInput,
+  type AnswerProvider,
+} from "./ask";
+import { searchFacts } from "./inventory-search";
 import { itemInput, itemUpdate } from "./inventory";
 import {
   authorize,
   HttpError,
+  isSameOrigin,
   json,
   readBody,
   safely,
@@ -17,7 +24,10 @@ export function handleItems(request: Request, context: RequestContext | null) {
         .string()
         .max(200)
         .parse(new URL(request.url).searchParams.get("q") ?? "");
-      return json({ items: await repository.list(q), limit: 200 });
+      return json({
+        items: await repository.list(q),
+        limit: q.trim() ? 200 : null,
+      });
     }
     if (request.method === "POST")
       return json(
@@ -79,12 +89,48 @@ export function handleAsk(
 ) {
   return safely(async () => {
     const { repository } = authorize(request, context);
-    const { question } = questionInput.parse(await readBody(request));
+    const { question, history } = questionInput.parse(
+      await readBody(request, 128_000),
+    );
     return json(
       await askInventory(
         question,
         { search: (q) => repository.list(q) },
         provider,
+        history,
+      ),
+    );
+  });
+}
+
+// Local snapshots have no account identity. Keep this model-backed demo off
+// production; /api/ask continues to require an authenticated repository.
+export function handleLocalAsk(request: Request, provider?: AnswerProvider) {
+  return safely(async () => {
+    if (process.env.NODE_ENV === "production")
+      throw new HttpError(
+        404,
+        "Local Jarvis is available in development only.",
+      );
+    if (!isSameOrigin(request))
+      throw new HttpError(403, "This request must come from the same site.");
+    const { question, history, items } = questionInput
+      .extend({
+        items: z
+          .array(inventoryFactInput)
+          .max(200)
+          .refine(
+            (rows) => new Set(rows.map((row) => row.id)).size === rows.length,
+            "Inventory IDs must be unique",
+          ),
+      })
+      .parse(await readBody(request, 256_000));
+    return json(
+      await askInventory(
+        question,
+        { search: async (query) => searchFacts(items, query) },
+        provider,
+        history,
       ),
     );
   });

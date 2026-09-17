@@ -28,6 +28,42 @@ const item: Item = {
 };
 
 describe("inventory grid presentation", () => {
+  it.each(["name", "recent", "quantity"] as const)(
+    "keeps containers ahead of ordinary items when sorting by %s",
+    (sort) => {
+      const items: Item[] = [
+        { ...item, id: "apple", name: "Apple", quantity: 20 },
+        {
+          ...item,
+          id: "wardrobe",
+          name: "Wardrobe",
+          kind: "container",
+          updated_at: "2026-08-01T00:00:00Z",
+        },
+        {
+          ...item,
+          id: "book",
+          name: "Book",
+          quantity: 10,
+          updated_at: "2026-08-15T00:00:00Z",
+        },
+        { ...item, id: "cabinet", name: "Cabinet", kind: "container" },
+      ];
+      const result = filterInventory(items, {
+        query: "",
+        kind: "all",
+        location: "all",
+        sort,
+      });
+      expect(result.map((entry) => entry.id)).toEqual(
+        sort === "quantity"
+          ? ["wardrobe", "cabinet", "apple", "book"]
+          : ["cabinet", "wardrobe", "apple", "book"],
+      );
+      expect(items[0].id).toBe("apple");
+    },
+  );
+
   it("fills a short inventory with empty slots", () => {
     const slots = buildInventorySlots([item], 24);
 
@@ -79,7 +115,11 @@ describe("inventory grid presentation", () => {
   });
 
   it("duplicates an item as a distinct editable local record", () => {
-    const duplicate = duplicateInventoryItem(item, "copy-id", "2026-09-14T00:00:00Z");
+    const duplicate = duplicateInventoryItem(
+      item,
+      "copy-id",
+      "2026-09-14T00:00:00Z",
+    );
 
     expect(duplicate).toMatchObject({
       id: "copy-id",

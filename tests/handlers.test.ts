@@ -52,6 +52,18 @@ function request(
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 }
+it("accepts six bounded conversation turns on the saved inventory API", async () => {
+  const history = Array.from({ length: 6 }, () => ({
+    question: "camera",
+    answer: "a".repeat(3000),
+  }));
+  const { ctx } = setup();
+  const response = await handleAsk(
+    request("POST", { question: "Where is it?", history }),
+    ctx,
+  );
+  expect(response.status).toBe(200);
+});
 it("rejects unauthenticated inventory access", async () =>
   expect((await handleItems(request("GET"), null)).status).toBe(401));
 it("rejects a cross-origin mutation before writing", async () => {

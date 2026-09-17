@@ -46,14 +46,22 @@ export async function safely(action: () => Promise<Response>) {
 export function authorize(request: Request, context: RequestContext | null) {
   if (!context)
     throw new HttpError(401, "Please sign in to access your inventory.");
-  if (
-    request.method !== "GET" &&
-    request.headers.get("origin") !== new URL(request.url).origin
-  )
+  if (request.method !== "GET" && !isSameOrigin(request))
     throw new HttpError(403, "This request must come from the same site.");
   return context;
 }
-export async function readBody(request: Request): Promise<unknown> {
+export function isSameOrigin(request: Request) {
+  const expected = new URL(request.url);
+  // Next dev may construct request.url with localhost even when the browser
+  // requested 127.0.0.1. Host is the browser's actual request authority.
+  const host = request.headers.get("host");
+  if (host) expected.host = host;
+  return request.headers.get("origin") === expected.origin;
+}
+export async function readBody(
+  request: Request,
+  maxBytes = 16000,
+): Promise<unknown> {
   if (!request.headers.get("content-type")?.includes("application/json"))
     throw new HttpError(415, "Expected JSON.");
   // Bound actual bytes even when Content-Length is absent or dishonest.
@@ -65,7 +73,7 @@ export async function readBody(request: Request): Promise<unknown> {
     const { done, value } = await reader.read();
     if (done) break;
     size += value.length;
-    if (size > 16000) {
+    if (size > maxBytes) {
       await reader.cancel();
       throw new HttpError(413, "Request body is too large.");
     }

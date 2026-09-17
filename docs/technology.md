@@ -13,9 +13,7 @@
 | Ollama (optional runtime)   | MIT                                         | Local OpenAI-compatible inference without per-token vendor billing |
 | Qwen3-8B (optional weights) | Apache-2.0                                  | Documented permissive model; hardware cost still applies           |
 | Zod                         | MIT                                         | Shared input contracts                                             |
-| Lucide                      | ISC                                         | Small consistent icons                                             |
-| Pixelarticons               | MIT                                         | Pixel-grid icons for the inventory dashboard                       |
-| Pixelify Sans               | OFL-1.1                                     | Self-hosted display font for the retro interface                   |
+| Phosphor Icons              | MIT                                         | Consistent interface icons for the liquid-glass dashboard          |
 | Vitest / PGlite             | MIT / Apache-2.0                            | Fast real behavior tests and executable Postgres policy checks     |
 
 Installed versions and direct dependency licenses are recorded in `dependency-licenses.json`. `package-lock.json` pins the resolved dependency tree; package distributions carry their license notices. Preserve those notices when redistributing. The model is not downloaded or bundled in this repository.
@@ -24,7 +22,7 @@ Installed versions and direct dependency licenses are recorded in `dependency-li
 
 - Start with built-in database search. No model is needed for CRUD, search, quantities, low stock or location lookups.
 - Use optional Qwen3-8B through Ollama for local exploration; no model was silently installed or downloaded.
-- One LangGraph node and one model call summarize a bounded set of facts. No tool loop, embeddings service, vector database or paid-provider failover.
+- Jarvis uses a bounded LangGraph generate/search loop: at most four model turns, twelve tool calls, and a 25-second deadline. Item edits are prepared by the graph, validated against the current inventory, and saved through the existing store; the model never receives a database client. Google Gemini uses the native `@langchain/google` adapter to preserve tool-call signatures. No embeddings service, vector database or provider failover is used.
 - Hosted inference can be more economical than keeping a GPU running for low traffic; use the same compatible interface and compare actual latency and usage before committing to infrastructure.
 - Claude remains available only by explicit environment configuration. Its SDK is open source; the Claude service/model is proprietary and billed separately.
 - Google ADK, Vercel AI SDK, camera detection models and third-party tracking SDKs are not included. LangGraph owns workflow orchestration; LangChain components only connect models.

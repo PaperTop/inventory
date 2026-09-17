@@ -61,6 +61,13 @@ export function demoRepository(): InventoryRepository {
       location_id: locations[3].id,
       tags: ["bathroom"],
     },
+    {
+      name: "Contact lenses",
+      category: "Personal care",
+      location_id: locations[3].id,
+      tags: ["vision", "daily"],
+      description: "Daily disposable contact lenses.",
+    },
   ];
   let items: Item[] = seeds.map((seed, index) => ({
     ...itemInput.parse({ ...seed, condition: "good" }),

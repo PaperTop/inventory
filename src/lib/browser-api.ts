@@ -1,5 +1,5 @@
 import type { InventoryRepository } from "./contracts";
-import type { AskResult } from "./ask";
+import type { AskResult, ChatTurn, InventoryFact } from "./ask";
 async function request(path: string, method = "GET", body?: unknown) {
   const response = await fetch(path, {
     method,
@@ -24,5 +24,13 @@ export const apiRepository: InventoryRepository = {
   createLocation: async (name) =>
     (await request("/api/locations", "POST", { name })).location,
 };
-export const askApi = (question: string): Promise<AskResult> =>
-  request("/api/ask", "POST", { question });
+export const askApi = (
+  question: string,
+  history?: ChatTurn[],
+): Promise<AskResult> => request("/api/ask", "POST", { question, history });
+export const askLocalApi = (
+  question: string,
+  items: InventoryFact[],
+  history?: ChatTurn[],
+): Promise<AskResult> =>
+  request("/api/ask/local", "POST", { question, items, history });
