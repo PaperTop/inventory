@@ -1,6 +1,7 @@
 import { serverClient } from "./supabase/server";
 import { isConfigured } from "./supabase/config";
 import { createRepository } from "./repository";
+import { createDashboardRepository } from "./dashboard-repository";
 import { HttpError, type RequestContext } from "./http";
 export async function requestContext(): Promise<RequestContext | null> {
   if (!isConfigured())
@@ -14,5 +15,9 @@ export async function requestContext(): Promise<RequestContext | null> {
     error,
   } = await client.auth.getUser();
   if (error || !user) return null;
-  return { userId: user.id, repository: createRepository(client, user.id) };
+  return {
+    userId: user.id,
+    repository: createRepository(client, user.id),
+    dashboard: createDashboardRepository(client, user.id),
+  };
 }

@@ -50,6 +50,17 @@ describe("inventory invariants", () => {
     expect(itemInput.safeParse({ ...input, user_id: owner }).success).toBe(
       false,
     ));
+  it.each(["active", "stored", "lent", "disposed"] as const)(
+    "accepts the remaining item status %s",
+    (status) =>
+      expect(itemInput.safeParse({ name: "Camera", status }).success).toBe(
+        true,
+      ),
+  );
+  it("rejects the removed lost status", () =>
+    expect(
+      itemInput.safeParse({ name: "Camera", status: "lost" }).success,
+    ).toBe(false));
   it("rejects array attributes", () =>
     expect(itemInput.safeParse({ ...input, attributes: [] }).success).toBe(
       false,

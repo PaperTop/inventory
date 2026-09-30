@@ -241,9 +241,6 @@
   background: #40d6ad;
   border-radius: 50%;
 }
-.status[data-status="lost"]::before {
-  background: #f08893;
-}
 .status[data-status="stored"]::before {
   background: #6496c4;
 }

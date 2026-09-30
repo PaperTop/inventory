@@ -103,4 +103,56 @@ Implemented the board as interactive states rather than six simultaneous screens
 
 No outstanding P0/P1/P2 visual findings in the inspected states.
 
+Result for the navy workspace pass: passed
+
+## Existing Spaces redesign — 2026-09-17
+
+Scope confirmed by the user: redesign existing behavior, without adding archive, nested spaces, permanent deletion, or additional metadata fields.
+
+Source: `/var/folders/wn/tkgb1mtn0s5cy93brcn7xv300000gn/T/codex-clipboard-413f769f-b73c-4539-bfaf-e9e775b5e66b.png` (1536 × 1024 composite board). Compared the Spaces/menu/editor regions rather than treating the board as one viewport.
+
+Evidence: `/private/tmp/spaces-redesign.png` (1265 × 712 initial Spaces view), `/private/tmp/spaces-drawer-final.png` (1280 × 720 final desktop editor), `/private/tmp/spaces-drawer-mobile.png` (390 × 844 mobile). Final desktop screenshot and source were viewed together. The source board's individual panels are scaled conceptual screens, not 1:1 desktop screenshots; no claim of pixel-exact copying. Editor controls are legible in full-view captures, so a separate focused crop was unnecessary.
+
+- Typography: retained system sans; clear Spaces heading, quiet subtitle and item/container counts; readable form labels.
+- Layout: four-column cards, search and view controls, corner action menu, right-aligned full-height editor. Mobile uses a full-width editor with visible bottom actions and no horizontal overflow (390px document and viewport).
+- Tokens: existing navy palette, muted blue panels, bright blue primary buttons and red delete confirmation.
+- Imagery: intentionally retained the existing editable Phosphor icon model rather than introducing a photo-management feature. Space-specific library icons replace the former generic pin defaults. This is a scoped adaptation, not a reproduction of the reference's photographic thumbnails.
+- Content: only existing name/icon/color and safe-delete functionality is exposed. Unsupported reference metadata and archive/permanent-delete actions are omitted. Existing containers remain accessible below the space cards.
+- Interaction: tested search and action menus; regression tests cover adding, renaming, icon/color changes, safe deletion, saved accounts, and preserving nested contents.
+
+Iteration history: P2 footer actions sat too high because the fieldset's anonymous layout box did not stretch its content. Added a full-height inner flex wrapper and verified the corrected desktop and mobile captures. Locked background document scrolling while the editor is open; final mobile width equals viewport width. No console warnings or errors in the final browser check.
+
+Checklist: desktop comparison complete; mobile comparison complete; existing behavior regression tests pass; no actionable P0/P1/P2 findings within the agreed redesign scope.
+
+final result: passed
+
+## Jarvis Dashboard — 2026-09-29
+
+### Evidence and comparison scope
+
+- Approved source: `/Users/jadenhuang/.codex/generated_images/01a0b896-d258-7771-8494-748751a1f100/exec-d195585c-7e12-4a5c-a789-4a9a137d5623.png` (1488 × 1058 pixels, design concept).
+- Rendered desktop: `/private/tmp/inventory-qa-06-dashboard-desktop-fixed.jpg` (1280 × 720 pixels, 1280 × 720 CSS viewport, 1× density). Final mobile initial and bottom-scroll captures: `/private/tmp/inventory-qa-07-mobile-fixed-top.jpg` and `/private/tmp/inventory-qa-08-mobile-fixed-bottom.jpg` (each 390 × 844 pixels, 390 × 844 CSS viewport, 1× density). No density normalization was needed.
+- State: signed-out sample Dashboard with grouped recent sample records, one grounded suggestion, and the Ask Jarvis composer. The source shows illustrative account activity; implementation content is intentionally drawn from the actual sample inventory and labeled as sample. Saved accounts use the separate persisted activity endpoint.
+- The source and rendered desktop were opened in one comparison input. Because the selected source is a taller conceptual frame, the comparison uses proportional layout and readable focused regions, not pixel-exact coordinate claims. The in-app browser's attempted 1488 × 1058 capture was clipped by its host window and was not used as visual evidence.
+- Full-view comparison: the rail occupies about one fifth of the width in both frames; headline, summary, two activity columns, divided suggestion, and bottom composer keep the same hierarchy. Focused comparison covered navigation labels, product thumbnails, actor/time labels, room dividers, suggestion copy, and composer controls. Those details were readable in the full captures, so separate crops were unnecessary.
+
+### Required fidelity surfaces
+
+- **Typography:** both use a compact sans-serif rail, large bold heading, muted summary and metadata, and restrained suggestion copy. Account-specific and activity wording differ because the source is illustrative and the implementation reports available data.
+- **Spacing and layout:** desktop uses the reference's open space and dividers without KPI cards. At 390 pixels, activity becomes one column. The mobile composer is fixed to the viewport bottom with reserved document space; the top and bottom captures confirm content scrolls clear of it.
+- **Colors:** the implementation uses the approved `#061722` base, `#0b1c2b` rail, pale ink, muted blue metadata, and cyan actions. It omits the source image's subtle blue bloom according to the designer's flat-color direction.
+- **Imagery:** existing inventory product cutouts and Phosphor interface icons render sharply with contained crops. Deleted activities use the generic item asset rather than a blank box.
+- **Copy and content:** sample activity describes recently updated sample records; saved activity comes from persisted owner-scoped events. A suggestion appears only when the available inventory grounds it, and Plan together starts a read-only chat prompt.
+
+### Comparison history and interaction checks
+
+1. **P2 desktop overlap:** the initial 1280 × 720 capture placed the sticky composer over the suggestion note. Reducing its desktop bottom inset left the note legible in `/private/tmp/inventory-qa-06-dashboard-desktop-fixed.jpg`.
+2. **P1 mobile drawer focus:** Tab could reach activity behind the open drawer. Opening now focuses the close control, traps Tab within the drawer, makes the background inert, and restores focus on Escape. A frontend regression test and live 390-pixel browser retest pass.
+3. **P2 mobile send obstruction:** Next's development indicator covered the composer send control in the preview. The documented `devIndicators: false` setting removed it; clicking the mobile composer sent a question through Jarvis and returned an answer.
+4. **P2 mobile composer reachability:** the initial mobile screenshot showed the composer only after scrolling. The composer now has `position: fixed` at 390 pixels; browser measurements show the same y778–836 bounds at scroll positions 0 and 278, document scroll width 390 pixels, and the suggestion note ending at y732 at the bottom. `/private/tmp/inventory-qa-07-mobile-fixed-top.jpg` and `/private/tmp/inventory-qa-08-mobile-fixed-bottom.jpg` show the final result. Design and QA independently accepted this mobile state.
+
+Plan together auto-submitted a contextual read-only prompt and received a Jarvis answer. The composer sent a separate question and received a grounded answer. The browser console had no warnings or errors during those checks. Lint, typecheck, and all runnable tests pass.
+
+No actionable P0/P1/P2 design findings remain in the compared states. The reference has no mobile frame; mobile is judged against the agreed single-column, readable, persistent-composer behavior rather than claimed pixel equivalence.
+
 final result: passed

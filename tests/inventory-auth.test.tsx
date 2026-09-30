@@ -83,6 +83,7 @@ afterEach(() => {
 it("shows signed-out sample mode and loads only saved records after login", async () => {
   const user = userEvent.setup();
   render(<InventoryApp />);
+  await user.click(await screen.findByRole("button", { name: "All items" }));
   await screen.findByRole("button", { name: "View Backpack" });
   expect(apiRepository.list).not.toHaveBeenCalled();
   await user.click(screen.getByText("Settings"));
@@ -94,6 +95,7 @@ it("shows signed-out sample mode and loads only saved records after login", asyn
     "test-password",
   );
   await user.click(within(dialog).getByRole("button", { name: "Sign in" }));
+  await user.click(await screen.findByRole("button", { name: "All items" }));
   expect(
     await screen.findByRole("button", { name: "View Private camera" }),
   ).toBeVisible();
@@ -117,6 +119,7 @@ it("keeps signed-in load errors distinct from sample inventory and supports retr
   await user.click(
     screen.getByRole("button", { name: "Retry loading inventory" }),
   );
+  await user.click(await screen.findByRole("button", { name: "All items" }));
   expect(
     await screen.findByRole("button", { name: "View Private camera" }),
   ).toBeVisible();
@@ -136,6 +139,7 @@ it("clears private inventory immediately on logout and does not sign out other d
   );
   const user = userEvent.setup();
   render(<InventoryApp />);
+  await user.click(await screen.findByRole("button", { name: "All items" }));
   await screen.findByRole("button", { name: "View Private camera" });
   await user.click(screen.getByText("Settings"));
   await user.click(screen.getByRole("button", { name: "Sign out" }));
@@ -144,6 +148,7 @@ it("clears private inventory immediately on logout and does not sign out other d
   ).toBeNull();
   expect(screen.getByText("Signing out…")).toBeVisible();
   await act(async () => finish());
+  await user.click(await screen.findByRole("button", { name: "All items" }));
   expect(
     await screen.findByRole("button", { name: "View Backpack" }),
   ).toBeVisible();
@@ -155,12 +160,14 @@ it("reports failed logout instead of claiming the session ended", async () => {
   auth.signOut.mockResolvedValue({ error: { message: "offline" } });
   const user = userEvent.setup();
   render(<InventoryApp />);
+  await user.click(await screen.findByRole("button", { name: "All items" }));
   await screen.findByRole("button", { name: "View Private camera" });
   await user.click(screen.getByText("Settings"));
   await user.click(screen.getByRole("button", { name: "Sign out" }));
   expect(await screen.findByRole("alert")).toHaveTextContent(
     /could not sign out/i,
   );
+  await user.click(screen.getByRole("button", { name: "All items" }));
   expect(
     await screen.findByRole("button", { name: "View Private camera" }),
   ).toBeVisible();
@@ -181,6 +188,7 @@ it("ignores an old account's delayed inventory response", async () => {
   render(<InventoryApp />);
   await waitFor(() => expect(apiRepository.list).toHaveBeenCalledOnce());
   act(() => emit("SIGNED_IN", { user: second }));
+  await user.click(await screen.findByRole("button", { name: "All items" }));
   await screen.findByText("Your inventory starts here");
   await act(async () => finish([camera]));
   expect(
@@ -215,6 +223,7 @@ it("clears chat on an account switch and ignores its late answer", async () => {
   );
   const user = userEvent.setup();
   render(<InventoryApp />);
+  await user.click(await screen.findByRole("button", { name: "All items" }));
   await screen.findByRole("button", { name: "View Private camera" });
   await user.click(screen.getByRole("button", { name: "Open Jarvis" }));
   await user.type(
@@ -225,6 +234,7 @@ it("clears chat on an account switch and ignores its late answer", async () => {
   expect(screen.getByText("My private question")).toBeVisible();
   vi.mocked(apiRepository.list).mockResolvedValue([]);
   act(() => emit("SIGNED_IN", { user: second }));
+  await user.click(await screen.findByRole("button", { name: "All items" }));
   await screen.findByText("Your inventory starts here");
   const create = vi.spyOn(apiRepository, "create");
   await act(async () =>

@@ -1,5 +1,6 @@
 import { ZodError } from "zod";
 import type { InventoryRepository } from "./contracts";
+import type { DashboardRepository } from "./dashboard";
 export class HttpError extends Error {
   constructor(
     public status: number,
@@ -11,6 +12,7 @@ export class HttpError extends Error {
 export type RequestContext = {
   userId: string;
   repository: InventoryRepository;
+  dashboard?: DashboardRepository;
 };
 export function json(data: unknown, status = 200) {
   return Response.json(data, {

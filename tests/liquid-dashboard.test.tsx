@@ -3,7 +3,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   cleanup,
-  render,
+  fireEvent,
+  render as renderView,
   screen,
   within,
   waitFor,
@@ -11,6 +12,14 @@ import {
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom/vitest";
 import { LiquidDashboard } from "../src/components/liquid-dashboard";
+import { readFileSync } from "node:fs";
+import styles from "../src/components/liquid-dashboard.module.css";
+
+function render(ui: Parameters<typeof renderView>[0]) {
+  const result = renderView(ui);
+  fireEvent.click(screen.getByRole("button", { name: "All items" }));
+  return result;
+}
 
 afterEach(() => {
   cleanup();
@@ -18,6 +27,120 @@ afterEach(() => {
 });
 
 describe("navy workspace navigation", () => {
+  it("keeps keyboard focus inside the open mobile navigation and restores it on close", async () => {
+    const user = userEvent.setup();
+    renderView(<LiquidDashboard />);
+    const opener = screen.getByRole("button", { name: "Open navigation" });
+    await user.click(opener);
+    const dialog = screen.getByRole("dialog", { name: "Navigation" });
+    const close = within(dialog).getByRole("button", {
+      name: "Close navigation",
+    });
+    expect(close).toHaveFocus();
+    expect(document.querySelector(`section.${styles.library}`)).toHaveAttribute(
+      "inert",
+    );
+    await user.tab();
+    expect(
+      within(dialog).getByRole("button", { name: "Dashboard" }),
+    ).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(close).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(dialog).toContainElement(document.activeElement as HTMLElement);
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "Navigation" })).toBeNull();
+    await waitFor(() => expect(opener).toHaveFocus());
+  });
+  it("keeps full-width space buttons styled inside branch wrappers", () => {
+    const stylesheet = document.createElement("style");
+    stylesheet.textContent = readFileSync(
+      "src/components/liquid-dashboard.module.css",
+      "utf8",
+    ).replace(/\.([a-zA-Z_][\w-]*)/g, (match, name: string) =>
+      styles[name] ? `.${styles[name]}` : match,
+    );
+    document.head.append(stylesheet);
+    try {
+      render(<LiquidDashboard />);
+      const nav = screen.getByRole("navigation", {
+        name: "Inventory locations",
+      });
+      for (const name of ["Home", "Bedroom", "College"]) {
+        const button = within(nav).getByRole("button", { name });
+        const appearance = getComputedStyle(button);
+        expect(appearance.display, name).toBe("flex");
+        expect(appearance.backgroundColor, name).toBe("rgba(0, 0, 0, 0)");
+        expect(appearance.textAlign, name).toBe("left");
+      }
+    } finally {
+      stylesheet.remove();
+    }
+  });
+  it("uses one space button to select its items and toggle its children", async () => {
+    const user = userEvent.setup();
+    render(<LiquidDashboard />);
+    const nav = screen.getByRole("navigation", { name: "Inventory locations" });
+    const home = within(nav).getByRole("button", { name: "Home" });
+    expect(home).toHaveAttribute("aria-expanded", "true");
+    expect(
+      within(nav).queryByRole("button", { name: "Collapse Home" }),
+    ).toBeNull();
+    await user.click(within(home).getByText("Home"));
+    expect(within(nav).queryByRole("button", { name: "Bedroom" })).toBeNull();
+    expect(within(nav).queryByRole("button", { name: "Cabinet" })).toBeNull();
+    expect(home).toHaveAttribute("aria-expanded", "false");
+    expect(home).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByRole("button", { name: "View Backpack" })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "View Travel tripod" }),
+    ).toBeVisible();
+    await user.click(home.querySelector("svg:last-child")!);
+    expect(within(nav).getByRole("button", { name: "Bedroom" })).toBeVisible();
+    const bedroom = within(nav).getByRole("button", { name: "Bedroom" });
+    await user.click(bedroom);
+    expect(bedroom).toHaveAttribute("aria-expanded", "true");
+    expect(bedroom).toHaveAttribute("aria-pressed", "true");
+    const cabinet = within(nav).getByRole("button", { name: "Cabinet" });
+    const drawer = within(nav).getByRole("button", { name: "Drawer" });
+    expect(cabinet).toBeVisible();
+    expect(drawer).toBeVisible();
+    expect(drawer.closest(`.${styles.containerTree}`)?.parentElement).toBe(
+      cabinet.closest(`.${styles.containerBranch}`),
+    );
+    expect(
+      within(nav).getAllByRole("button", { name: "Cabinet" }),
+    ).toHaveLength(1);
+    expect(within(nav).getAllByRole("button", { name: "Drawer" })).toHaveLength(
+      1,
+    );
+    await user.keyboard("{Enter}");
+    expect(within(nav).queryByRole("button", { name: "Cabinet" })).toBeNull();
+    const college = within(nav).getByRole("button", { name: "College" });
+    await user.click(college);
+    expect(college).toHaveAttribute("aria-expanded", "true");
+    expect(college).toHaveAttribute("aria-pressed", "true");
+    expect(
+      college.closest(`.${styles.spaceBranchRow}`)?.nextElementSibling,
+    ).toHaveTextContent("No containers");
+    expect(screen.getByRole("button", { name: "View Backpack" })).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "View Travel tripod" }),
+    ).toBeNull();
+    await user.click(college.querySelector("svg:last-child")!);
+    expect(college).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("button", { name: "View Backpack" })).toBeVisible();
+    await user.click(bedroom);
+    expect(bedroom).toHaveAttribute("aria-expanded", "true");
+    expect(within(nav).getByRole("button", { name: "Cabinet" })).toBeVisible();
+    expect(college).toHaveAttribute("aria-expanded", "false");
+    await user.click(bedroom);
+    expect(bedroom).toHaveAttribute("aria-expanded", "false");
+    expect(within(nav).queryByRole("button", { name: "Cabinet" })).toBeNull();
+    expect(college).toHaveAttribute("aria-expanded", "false");
+    await user.click(screen.getByRole("button", { name: "All items" }));
+    expect(screen.getByRole("button", { name: "View Backpack" })).toBeVisible();
+  });
   it("renames a built-in space through a visible edit control", async () => {
     const user = userEvent.setup();
     render(<LiquidDashboard />);
@@ -440,6 +563,39 @@ describe("liquid dashboard interactions", () => {
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
   });
 
+  it("omits Missing navigation and lost status choices", async () => {
+    const user = userEvent.setup();
+    render(<LiquidDashboard />);
+
+    expect(
+      within(
+        screen.getByRole("navigation", { name: "Main navigation" }),
+      ).queryByRole("button", { name: "Missing" }),
+    ).toBeNull();
+
+    const statusFilter = screen.getByRole("combobox", { name: "Status" });
+    await user.click(statusFilter);
+    const filterOptions = screen.getByRole("listbox", { name: "Status" });
+    expect(
+      within(filterOptions).queryByRole("option", { name: "Missing" }),
+    ).toBeNull();
+    await user.click(
+      within(filterOptions).getByRole("option", { name: "Stored" }),
+    );
+    expect(screen.getByRole("button", { name: "View Camera" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "View Backpack" })).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "View Camera" }));
+    const itemStatus = screen.getByRole("combobox", { name: "Item status" });
+    await user.click(itemStatus);
+    const itemOptions = screen.getByRole("listbox", { name: "Item status" });
+    expect(
+      within(itemOptions).queryByRole("option", { name: "Missing" }),
+    ).toBeNull();
+    await user.click(within(itemOptions).getByRole("option", { name: "Lent" }));
+    expect(itemStatus).toHaveTextContent("Lent");
+  });
+
   it("edits notes directly and deletes the selected item", async () => {
     const user = userEvent.setup();
     render(<LiquidDashboard />);
@@ -453,7 +609,7 @@ describe("liquid dashboard interactions", () => {
     expect(screen.getByRole("textbox", { name: "Notes" })).toHaveValue(
       "Packed for tomorrow.",
     );
-    for (const name of ["Delete", "Duplicate", "Favorite", "Missing"]) {
+    for (const name of ["Delete", "Duplicate", "Favorite"]) {
       expect(
         within(
           screen.getByRole("complementary", { name: "Item details" }),
@@ -546,7 +702,7 @@ describe("liquid dashboard interactions", () => {
       within(navigation).getByRole("button", { name: "Garage" }),
     ).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByText("0 items")).toBeVisible();
-    await user.click(within(navigation).getByRole("button", { name: "Home" }));
+    await user.click(screen.getByRole("button", { name: "All items" }));
     expect(
       screen.queryByRole("button", { name: "View New item" }),
     ).not.toBeInTheDocument();

@@ -1,9 +1,17 @@
 import type { InventoryRepository } from "./contracts";
 import type { AskResult, ChatTurn, InventoryFact } from "./ask";
-async function request(path: string, method = "GET", body?: unknown) {
+import type { ActivityActor, DashboardBriefing } from "./dashboard";
+async function request(
+  path: string,
+  method = "GET",
+  body?: unknown,
+  extraHeaders?: Record<string, string>,
+) {
   const response = await fetch(path, {
     method,
-    headers: body ? { "content-type": "application/json" } : undefined,
+    headers: body
+      ? { "content-type": "application/json", ...extraHeaders }
+      : extraHeaders,
     body: body ? JSON.stringify(body) : undefined,
     cache: "no-store",
   });
@@ -11,14 +19,29 @@ async function request(path: string, method = "GET", body?: unknown) {
   if (!response.ok) throw new Error(data.error || "Request failed.");
   return data;
 }
+const actorHeader = (actor?: ActivityActor) =>
+  actor ? { "X-Inventory-Actor": actor } : undefined;
 export const apiRepository: InventoryRepository = {
   list: async (q) =>
     (await request(`/api/items?q=${encodeURIComponent(q)}`)).items,
-  create: async (input) => (await request("/api/items", "POST", input)).item,
-  update: async (id, version, input) =>
-    (await request(`/api/items/${id}`, "PUT", { ...input, version })).item,
-  remove: async (id, version) => {
-    await request(`/api/items/${id}`, "DELETE", { version });
+  create: async (input, actor) =>
+    (await request("/api/items", "POST", input, actorHeader(actor))).item,
+  update: async (id, version, input, actor) =>
+    (
+      await request(
+        `/api/items/${id}`,
+        "PUT",
+        { ...input, version },
+        actorHeader(actor),
+      )
+    ).item,
+  remove: async (id, version, actor) => {
+    await request(
+      `/api/items/${id}`,
+      "DELETE",
+      { version },
+      actorHeader(actor),
+    );
   },
   locations: async () => (await request("/api/locations")).locations,
   createLocation: async (name) =>
@@ -39,3 +62,7 @@ export const askLocalApi = (
   history?: ChatTurn[],
 ): Promise<AskResult> =>
   request("/api/ask/local", "POST", { question, items, history });
+export const dashboardApi = (): Promise<DashboardBriefing> =>
+  request("/api/dashboard");
+export const markDashboardVisited = (asOf: string): Promise<void> =>
+  request("/api/dashboard/visit", "POST", { asOf }).then(() => undefined);

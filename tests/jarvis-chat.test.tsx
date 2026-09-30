@@ -92,3 +92,41 @@ it("resets chat exchanges and restores the welcome state when Reset is clicked",
   expect(input).toHaveValue("");
   expect(input).toHaveFocus();
 });
+
+it("submits a dashboard prompt through the existing Jarvis workflow", async () => {
+  const fetchMock = vi.fn(
+    async () =>
+      new Response(
+        JSON.stringify({
+          mode: "ai",
+          answer: "Here is a read-only organization plan.",
+          citations: [],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  render(
+    <JarvisChat
+      saved={false}
+      items={[]}
+      onSelect={() => {}}
+      onApplyChanges={async () => ({ items: [], summary: "" })}
+      promptRequest={{
+        id: 1,
+        text: "Help me organize my camera gear without making changes.",
+        submit: true,
+      }}
+    />,
+  );
+
+  expect(
+    await screen.findByText(
+      "Help me organize my camera gear without making changes.",
+    ),
+  ).toBeVisible();
+  expect(
+    await screen.findByText("Here is a read-only organization plan."),
+  ).toBeVisible();
+  expect(fetchMock).toHaveBeenCalledOnce();
+});

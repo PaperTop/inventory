@@ -14,7 +14,7 @@ The reader exposes only search. The provider receives a snapshot, no database cl
 
 ## Decisions and alternatives
 
-Use one Next.js deployment; a separate agent service would require two deployments before it adds value. Server API routes centralize validation and ownership; direct browser database access would make app policy harder to trace. Postgres enforces ownership independently of API checks. Durable rows represent one object and quantity is always 1; consumable rows aggregate nonnegative decimal quantities with a named unit and optional reorder threshold. Status is active, stored, lent, lost or disposed; condition is new, good, fair, poor or unknown. Locations are per-user named records. Tags are a normalized lowercase text array; attributes are a bounded JSON object. Timestamps and a monotonic version support stale-update detection.
+Use one Next.js deployment; a separate agent service would require two deployments before it adds value. Server API routes centralize validation and ownership; direct browser database access would make app policy harder to trace. Postgres enforces ownership independently of API checks. Durable rows represent one object and quantity is always 1; consumable rows aggregate nonnegative decimal quantities with a named unit and optional reorder threshold. Status is active, stored, lent or disposed; condition is new, good, fair, poor or unknown. Locations are per-user named records. Tags are a normalized lowercase text array; attributes are a bounded JSON object. Timestamps and a monotonic version support stale-update detection.
 
 ## Security and data model
 

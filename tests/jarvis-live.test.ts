@@ -50,7 +50,7 @@ it
       make("light", "Headlamp", "Camping"),
       make("soap", "Soap", "Personal care"),
       make("empty", "Contact lens solution", "Personal care", { quantity: 0 }),
-      make("lost", "Rain jacket", "Clothing", { status: "lost" }),
+      make("disposed", "Rain jacket", "Clothing", { status: "disposed" }),
     ];
     const result = await askInventory(
       question,

@@ -7,6 +7,7 @@ import {
 } from "./ask";
 import { searchFacts } from "./inventory-search";
 import { itemInput, itemUpdate } from "./inventory";
+import type { ActivityActor } from "./dashboard";
 import {
   authorize,
   HttpError,
@@ -34,6 +35,7 @@ export function handleItems(request: Request, context: RequestContext | null) {
         {
           item: await repository.create(
             itemInput.parse(await readBody(request)),
+            mutationActor(request),
           ),
         },
         201,
@@ -51,17 +53,64 @@ export function handleItem(
     z.uuid().parse(id);
     if (request.method === "PUT") {
       const { version, ...input } = itemUpdate.parse(await readBody(request));
-      return json({ item: await repository.update(id, version, input) });
+      return json({
+        item: await repository.update(
+          id,
+          version,
+          input,
+          mutationActor(request),
+        ),
+      });
     }
     if (request.method === "DELETE") {
       const { version } = z
         .object({ version: z.number().int().positive() })
         .strict()
         .parse(await readBody(request));
-      await repository.remove(id, version);
+      await repository.remove(id, version, mutationActor(request));
       return json({ deleted: true });
     }
     throw new HttpError(405, "Method not allowed.");
+  });
+}
+
+function mutationActor(request: Request): ActivityActor {
+  const actor = request.headers.get("x-inventory-actor");
+  if (actor === null || actor === "user") return "user";
+  if (actor === "jarvis") return "jarvis";
+  throw new HttpError(400, "Invalid inventory activity actor.");
+}
+
+export function handleDashboard(
+  request: Request,
+  context: RequestContext | null,
+) {
+  return safely(async () => {
+    const authorized = authorize(request, context);
+    if (request.method !== "GET")
+      throw new HttpError(405, "Method not allowed.");
+    if (!authorized.dashboard)
+      throw new HttpError(503, "Dashboard activity is unavailable.");
+    return json(await authorized.dashboard.briefing());
+  });
+}
+
+export function handleDashboardVisit(
+  request: Request,
+  context: RequestContext | null,
+) {
+  return safely(async () => {
+    const authorized = authorize(request, context);
+    if (request.method !== "POST")
+      throw new HttpError(405, "Method not allowed.");
+    if (!authorized.dashboard)
+      throw new HttpError(503, "Dashboard activity is unavailable.");
+    const { asOf } = z
+      .object({ asOf: z.iso.datetime() })
+      .strict()
+      .parse(await readBody(request));
+    await authorized.dashboard.acknowledge(asOf);
+    return json({ acknowledged: true });
   });
 }
 export function handleLocations(

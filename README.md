@@ -200,7 +200,9 @@ To opt into Claude, set `AI_PROVIDER=claude`, `ANTHROPIC_API_KEY`, and `ANTHROPI
 - Container cycles, cross-owner parents, non-container parents, occupied-container type changes, and deletion of non-empty containers are rejected by both the application and the database migration.
 - `locations`: reusable owner-specific named locations. A composite foreign key prevents an item from referring to another user's location.
 - `inventory_observations`: append-only source events with confidence, event identity, observed/received times, base version, and proposed patch. Unique `(user_id, source, source_event_id)` prevents duplicate events. Owner-matching references prevent foreign item observations.
-- Tags are normalized lowercase arrays. Attributes are bounded JSON objects. Status: `active`, `stored`, `lent`, `lost`, `disposed`. Condition: `new`, `good`, `fair`, `poor`, `unknown`.
+- `inventory_activity`: owner-scoped audit events created by database triggers for item creation, edits, moves, and deletion. Events capture the owning room, item name, action channel (`user` or `jarvis`), and time at which the mutation occurred. The dashboard does not invent history for records that predate this migration.
+- `inventory_dashboard_visits`: the last dashboard briefing that the user explicitly acknowledged after it rendered. “Since your last visit” is used only when this durable marker exists; first visits show activity recorded in the past 30 days.
+- Tags are normalized lowercase arrays. Attributes are bounded JSON objects. Status: `active`, `stored`, `lent`, `disposed`. Condition: `new`, `good`, `fair`, `poor`, `unknown`.
 - Updates increment `version` in Postgres. Edit/delete requests include the version they read; stale operations return `409`.
 - Deletion is permanent and removes associated observations. Use `disposed` to retain an inventory entry and its history.
 - Listing returns at most 200 records per search. A connected UI must make this limit visible; refine the query for larger inventories. Filters/statistics apply to the current result set. Search uses parameterized literal terms, with OR matching across names, notes, categories, locations, tags and attributes.
@@ -209,15 +211,21 @@ To opt into Claude, set `AI_PROVIDER=claude`, `ANTHROPIC_API_KEY`, and `ANTHROPI
 
 Every production route requires the verified Supabase session cookie. Write requests also require an `Origin` matching the request URL and JSON content type. Request bodies are bounded to 16 KB.
 
-| Method | Route                  | Input / result                                          |
-| ------ | ---------------------- | ------------------------------------------------------- |
-| GET    | `/api/items?q=charger` | `{ items, limit: 200 }`                                 |
-| POST   | `/api/items`           | Item fields → `{ item }`, 201                           |
-| PUT    | `/api/items/:id`       | Full editable item fields plus `version` → `{ item }`   |
-| DELETE | `/api/items/:id`       | `{ version }` → `{ deleted: true }`                     |
-| GET    | `/api/locations`       | `{ locations }`                                         |
-| POST   | `/api/locations`       | `{ name }` → `{ location }`, 201                        |
-| POST   | `/api/ask`             | `{ question }` → `{ answer, citations, mode, notice? }` |
+| Method | Route                  | Input / result                                             |
+| ------ | ---------------------- | ---------------------------------------------------------- |
+| GET    | `/api/items?q=charger` | `{ items, limit: 200 }`                                    |
+| POST   | `/api/items`           | Item fields → `{ item }`, 201                              |
+| PUT    | `/api/items/:id`       | Full editable item fields plus `version` → `{ item }`      |
+| DELETE | `/api/items/:id`       | `{ version }` → `{ deleted: true }`                        |
+| GET    | `/api/locations`       | `{ locations }`                                            |
+| POST   | `/api/locations`       | `{ name }` → `{ location }`, 201                           |
+| POST   | `/api/ask`             | `{ question }` → `{ answer, citations, mode, notice? }`    |
+| GET    | `/api/dashboard`       | Per-user activity groups, summary, and grounded suggestion |
+| POST   | `/api/dashboard/visit` | `{ asOf }` → `{ acknowledged: true }`                      |
+
+The dashboard endpoints require the same verified session as inventory CRUD. After a dashboard response renders successfully, acknowledge its exact `asOf` value; do not acknowledge loading or failed responses. Suggestions are deterministic and appear only when current items in the same non-empty category span at least two owning spaces. Opening a suggestion starts a read-only Jarvis planning conversation and does not mutate inventory.
+
+Ordinary mutations are attributed to the signed-in user. The existing item mutation routes accept `X-Inventory-Actor: jarvis` only for changes explicitly prepared and applied through Jarvis; absent headers default to `user`, and other values are rejected. Attribution identifies the application action channel, not a separate security principal.
 
 Ownership fields are never accepted from callers. Error responses use `{ error }`: 400 invalid input, 401 missing auth, 403 forbidden/origin mismatch, 404 unknown/foreign item, 409 stale/conflicting data, 413 excessive body, 415 non-JSON body, 503 missing setup/storage unavailable. All personalized responses use `private, no-store`.
 

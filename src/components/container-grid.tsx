@@ -127,7 +127,7 @@ export function ContainerGrid({
                     </td>
                     <td>
                       <span className={css.status} data-status={item.status}>
-                        {item.status === "lost" ? "Missing" : item.status}
+                        {item.status}
                       </span>
                     </td>
                     <td>{date(item.updated_at)}</td>

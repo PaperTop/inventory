@@ -1,9 +1,15 @@
 import type { Item, ItemInput, Location } from "./inventory";
+import type { ActivityActor } from "./dashboard";
 export interface InventoryRepository {
   list(query: string): Promise<Item[]>;
-  create(input: ItemInput): Promise<Item>;
-  update(id: string, version: number, input: ItemInput): Promise<Item>;
-  remove(id: string, version: number): Promise<void>;
+  create(input: ItemInput, actor?: ActivityActor): Promise<Item>;
+  update(
+    id: string,
+    version: number,
+    input: ItemInput,
+    actor?: ActivityActor,
+  ): Promise<Item>;
+  remove(id: string, version: number, actor?: ActivityActor): Promise<void>;
   locations(): Promise<Location[]>;
   createLocation(name: string): Promise<Location>;
   updateLocation(id: string, name: string): Promise<Location>;

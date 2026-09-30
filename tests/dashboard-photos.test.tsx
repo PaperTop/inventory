@@ -90,6 +90,7 @@ it("uploads a saved photo and displays it in details and the grid after remounti
   const view = render(
     <LiquidDashboard savedInventory={{ items: records, locations: [] }} />,
   );
+  await user.click(screen.getByRole("button", { name: "All items" }));
   await screen.findByText("Saved inventory ready");
   await user.click(screen.getByRole("button", { name: "View Camera" }));
   await user.upload(
@@ -111,6 +112,7 @@ it("uploads a saved photo and displays it in details and the grid after remounti
   render(
     <LiquidDashboard savedInventory={{ items: records, locations: [] }} />,
   );
+  await user.click(screen.getByRole("button", { name: "All items" }));
   await screen.findByText("Saved inventory ready");
   await user.click(screen.getByRole("button", { name: "View Camera" }));
   expect(screen.getByRole("img", { name: "Camera" })).toHaveAttribute(
@@ -134,6 +136,7 @@ it.each(["upload", "save"])(
     render(
       <LiquidDashboard savedInventory={{ items: records, locations: [] }} />,
     );
+    await user.click(screen.getByRole("button", { name: "All items" }));
     await screen.findByText("Saved inventory ready");
     await user.click(screen.getByRole("button", { name: "View Camera" }));
     const source = screen

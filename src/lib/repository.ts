@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { InventoryRepository } from "./contracts";
 import type { Item, ItemInput, Location } from "./inventory";
+import type { ActivityActor } from "./dashboard";
 import { HttpError } from "./http";
 type DbError = { code?: string; message: string } | null;
 function check(error: DbError) {
@@ -84,38 +85,42 @@ export function createRepository(
       check(error);
       return (data ?? []) as Item[];
     },
-    async create(input: ItemInput) {
+    async create(input: ItemInput, actor: ActivityActor = "user") {
       const { data, error } = await client
-        .from("items")
-        .insert({ ...input, user_id: userId })
-        .select()
-        .single();
+        .rpc("create_inventory_item", {
+          item_data: input,
+          activity_actor: actor,
+        })
+        .maybeSingle();
       check(error);
-      return hydrate(data);
+      if (!data)
+        throw new HttpError(
+          503,
+          "Inventory storage did not return the new item.",
+        );
+      return hydrate(data as Omit<Item, "location_name">);
     },
-    async update(id, version, input) {
+    async update(id, version, input, actor: ActivityActor = "user") {
       const { data, error } = await client
-        .from("items")
-        .update(input)
-        .eq("user_id", userId)
-        .eq("id", id)
-        .eq("version", version)
-        .select()
+        .rpc("update_inventory_item", {
+          item_id: id,
+          expected_version: version,
+          item_data: input,
+          activity_actor: actor,
+        })
         .maybeSingle();
       check(error);
       if (!data) return conflict(id);
-      return hydrate(data);
+      return hydrate(data as Omit<Item, "location_name">);
     },
-    async remove(id, version) {
-      const { data, error } = await client
-        .from("items")
-        .delete()
-        .eq("user_id", userId)
-        .eq("id", id)
-        .eq("version", version)
-        .select("id");
+    async remove(id, version, actor: ActivityActor = "user") {
+      const { data, error } = await client.rpc("delete_inventory_item", {
+        item_id: id,
+        expected_version: version,
+        activity_actor: actor,
+      });
       check(error);
-      if (!data?.length) await conflict(id);
+      if (!data) await conflict(id);
     },
     async locations() {
       const { data, error } = await client

@@ -9,6 +9,7 @@ import {
   type CSSProperties,
   type FormEvent,
   type ReactNode,
+  Fragment,
 } from "react";
 import {
   Archive,
@@ -51,7 +52,16 @@ import {
 import type { Icon } from "@phosphor-icons/react";
 import type { Item, Location } from "@/lib/inventory";
 import { ancestors, containerDestinations } from "@/lib/containers";
-import { apiRepository } from "@/lib/browser-api";
+import {
+  apiRepository,
+  dashboardApi,
+  markDashboardVisited,
+} from "@/lib/browser-api";
+import type {
+  DashboardActivityGroup,
+  DashboardBriefing,
+  DashboardSuggestion,
+} from "@/lib/dashboard";
 import { validatePhotoFile } from "@/lib/photos";
 import type { SavedInventory } from "./inventory-app";
 import {
@@ -64,6 +74,7 @@ import { ContainerGrid } from "./container-grid";
 import { SpacesBrowser } from "./spaces-browser";
 import { JarvisChat } from "./jarvis-chat";
 import { GlassSelect } from "./glass-select";
+import { InventoryDashboard } from "./inventory-dashboard";
 import {
   useInventoryStore,
   visualItem,
@@ -468,6 +479,82 @@ const initialItems = [...seedItems, ...seedContainers, ...seedAccessories].map(
   },
 );
 
+function sampleDashboardBriefing(items: VisualItem[]): DashboardBriefing {
+  const recent = items
+    .filter((item) => item.kind !== "container")
+    .toSorted(
+      (a, b) =>
+        new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
+    )
+    .slice(0, 4);
+  const groups = new Map<string, DashboardActivityGroup>();
+  for (const item of recent) {
+    const roomName = item.location_name || "Unassigned";
+    const group = groups.get(roomName) ?? {
+      room: { id: item.resolved_location_id ?? null, name: roomName },
+      activities: [],
+    };
+    group.activities.push({
+      id: `sample:${item.id}:${item.version}`,
+      itemId: item.id,
+      itemName: item.name,
+      kind: "updated",
+      actor: "user",
+      occurredAt: item.updated_at,
+      imagePath:
+        typeof item.attributes.image_path === "string"
+          ? item.attributes.image_path
+          : null,
+      detail: "Updated",
+    });
+    groups.set(roomName, group);
+  }
+
+  const categories = new Map<string, VisualItem[]>();
+  for (const item of items.filter((row) => row.kind !== "container")) {
+    const key = item.category.trim().toLowerCase();
+    if (key) categories.set(key, [...(categories.get(key) ?? []), item]);
+  }
+  const splitCategory = [...categories.values()]
+    .map((rows) => ({
+      rows,
+      rooms: [
+        ...new Set(
+          rows
+            .map((row) => row.location_name)
+            .filter((name): name is string => Boolean(name)),
+        ),
+      ],
+    }))
+    .filter(({ rows, rooms }) => rows.length >= 2 && rooms.length >= 2)
+    .sort(
+      (a, b) =>
+        b.rows.length - a.rows.length || b.rooms.length - a.rooms.length,
+    )[0];
+  const suggestion: DashboardSuggestion | null = splitCategory
+    ? {
+        id: `sample-split:${splitCategory.rows[0].category.toLowerCase()}`,
+        text: `Jarvis noticed your ${splitCategory.rows[0].category.toLowerCase()} are stored in ${splitCategory.rooms.length} spaces.`,
+        prompt: `Help me review how my ${splitCategory.rows[0].category} items are organized across ${splitCategory.rooms.join(" and ")}. Start with a read-only plan and do not make changes.`,
+        itemIds: splitCategory.rows.map((item) => item.id),
+        roomNames: splitCategory.rooms,
+      }
+    : null;
+
+  return {
+    asOf: new Date().toISOString(),
+    lastVisitedAt: null,
+    activityHeading: "Recent sample activity",
+    summary: recent.length
+      ? `These are the ${recent.length} most recently updated sample records.`
+      : "No sample inventory activity is available yet.",
+    activityCount: recent.length,
+    hasMore: false,
+    groups: [...groups.values()],
+    suggestion,
+  };
+}
+
 const navItems = [
   {
     label: "Home",
@@ -503,6 +590,7 @@ const initialLocationOptions = [
   "Living Room",
   "College",
   "Car",
+  "Travel",
 ] as const;
 
 const placeIconOptions = [
@@ -518,6 +606,7 @@ const placeIconOptions = [
   { value: "House", label: "Home", Icon: House },
   { value: "Buildings", label: "College", Icon: Buildings },
   { value: "CarProfile", label: "Car", Icon: CarProfile },
+  { value: "AirplaneTilt", label: "Travel", Icon: AirplaneTilt },
 ] as const;
 
 const placeColorOptions = [
@@ -530,6 +619,7 @@ const placeColorOptions = [
 type PlaceIconValue = (typeof placeIconOptions)[number]["value"];
 type PlaceColorValue = (typeof placeColorOptions)[number]["value"];
 type Place = {
+  parent?: string;
   name: string;
   icon: PlaceIconValue;
   color: string;
@@ -545,7 +635,73 @@ function defaultPlace(name: string): Place {
     placeIconOptions.find(
       (option) => option.label.toLowerCase() === name.toLowerCase(),
     ) ?? placeIconOptions[0];
-  return { name, icon: option.value, Icon: option.Icon, color: "#85bce8" };
+  return {
+    name,
+    icon: option.value,
+    Icon: option.Icon,
+    color: "#85bce8",
+    parent: ["Bedroom", "Bathroom", "Kitchen", "Living Room"].includes(name)
+      ? "Home"
+      : undefined,
+  };
+}
+
+function SidebarContainerTree({
+  items,
+  spaceName,
+  onOpen,
+}: {
+  items: VisualItem[];
+  spaceName: string;
+  onOpen: (container: VisualItem) => void;
+}) {
+  const containers = items.filter(
+    (item) => item.kind === "container" && item.location_name === spaceName,
+  );
+  if (!containers.length)
+    return <span className={styles.emptyBranch}>No containers</span>;
+
+  const ids = new Set(containers.map((item) => item.id));
+  const rendered = new Set<string>();
+
+  function renderContainer(container: VisualItem): ReactNode {
+    if (rendered.has(container.id)) return null;
+    rendered.add(container.id);
+    const children = containers.filter(
+      (item) => item.parent_container_id === container.id,
+    );
+    return (
+      <div
+        className={styles.containerBranch}
+        data-container-id={container.id}
+        key={container.id}
+      >
+        <button
+          className={styles.containerNav}
+          onClick={() => onOpen(container)}
+        >
+          <Archive />
+          <span>{container.name}</span>
+        </button>
+        {children.length > 0 && (
+          <div className={styles.containerTree}>
+            {children.map(renderContainer)}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const roots = containers.filter(
+    (item) => !item.parent_container_id || !ids.has(item.parent_container_id),
+  );
+  const branches = roots.map(renderContainer);
+  // Valid inventory always forms a forest. Rendering any remainder once keeps
+  // malformed legacy data visible without duplicating a container in the nav.
+  branches.push(
+    ...containers.filter((item) => !rendered.has(item.id)).map(renderContainer),
+  );
+  return <>{branches}</>;
 }
 
 export function LiquidDashboard({
@@ -573,6 +729,7 @@ export function LiquidDashboard({
     create: createItem,
     remove: removeItem,
     error: storeError,
+    pending: pendingSaves,
   } = store;
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [photoError, setPhotoError] = useState<{
@@ -586,6 +743,14 @@ export function LiquidDashboard({
   const [moveDestination, setMoveDestination] = useState("");
   const [savingPlace, setSavingPlace] = useState(false);
   const [addingPlace, setAddingPlace] = useState(false);
+  useEffect(() => {
+    if (!addingPlace) return;
+    const previous = document.documentElement.style.overflow;
+    document.documentElement.style.overflow = "hidden";
+    return () => {
+      document.documentElement.style.overflow = previous;
+    };
+  }, [addingPlace]);
   const [placeName, setPlaceName] = useState("");
   const [placeError, setPlaceError] = useState("");
   const [placeIcon, setPlaceIcon] = useState<PlaceIconValue>("MapPin");
@@ -612,12 +777,11 @@ export function LiquidDashboard({
           place: undefined,
         }))
       : []),
-    ...places
+    ...(storageMode === "sample" ? places : [])
       .filter(
         (place) =>
-          !["Home", "Bedroom", "Bathroom", "Kitchen", "Living Room"].includes(
-            place.name,
-          ),
+          place.name !== "Home" &&
+          (!place.parent || !locationOptions.includes(place.parent)),
       )
       .map((place) => ({
         label: place.name,
@@ -632,13 +796,60 @@ export function LiquidDashboard({
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
-  const [section, setSection] = useState("Home");
+  const railRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!mobileNav) return;
+    const previous = document.activeElement as HTMLElement | null;
+    const rail = railRef.current;
+    rail
+      ?.querySelector<HTMLButtonElement>("[aria-label='Close navigation']")
+      ?.focus();
+    const trapFocus = (event: KeyboardEvent) => {
+      if (event.key !== "Tab" || !rail) return;
+      const controls = [
+        ...rail.querySelectorAll<HTMLElement>(
+          "button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), summary, [tabindex]:not([tabindex='-1'])",
+        ),
+      ].filter((control) => control.tabIndex >= 0);
+      const first = controls[0];
+      const last = controls.at(-1);
+      if (!first || !last) return;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      } else if (!rail.contains(document.activeElement)) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", trapFocus, true);
+    return () => {
+      document.removeEventListener("keydown", trapFocus, true);
+      queueMicrotask(() => {
+        if (previous?.isConnected) previous.focus();
+        else
+          document
+            .querySelector<HTMLElement>("[aria-label='Open navigation']")
+            ?.focus();
+      });
+    };
+  }, [mobileNav]);
+  const [section, setSection] = useState("Dashboard");
+  const [expandedSpaces, setExpandedSpaces] = useState<Record<string, boolean>>(
+    { Home: true },
+  );
+  const toggleSpace = (name: string) =>
+    setExpandedSpaces((current) => ({ ...current, [name]: !current[name] }));
   const [iconChoicesOpen, setIconChoicesOpen] = useState(false);
   const [category, setCategory] = useState("all");
   const [status, setStatus] = useState("all");
   const [filterOpen, setFilterOpen] = useState(false);
   const [openedContainer, setOpenedContainer] = useState<string | null>(null);
   const spacesLanding = section === "Spaces" && !openedContainer;
+  const dashboardLanding = section === "Dashboard";
   const [tagFilter, setTagFilter] = useState("");
   const searchInput = useRef<HTMLInputElement>(null);
   const detailRef = useRef<HTMLElement>(null);
@@ -648,6 +859,7 @@ export function LiquidDashboard({
   const [promptRequest, setPromptRequest] = useState<{
     text: string;
     id: number;
+    submit?: boolean;
   }>();
   const [kind, setKind] = useState<InventoryViewOptions["kind"]>("all");
   const [location, setLocation] = useState("all");
@@ -663,31 +875,102 @@ export function LiquidDashboard({
   const [notice, setNotice] = useState(
     savedInventory ? "Saved inventory ready" : "Sample inventory is ready",
   );
+  const [dashboardBriefing, setDashboardBriefing] =
+    useState<DashboardBriefing | null>(null);
+  const [dashboardError, setDashboardError] = useState("");
+  const [dashboardAttempt, setDashboardAttempt] = useState(0);
+  const acknowledgedDashboard = useRef(new Set<string>());
+  const previousPendingSaves = useRef(pendingSaves);
+  const sampleBriefing = useMemo(() => sampleDashboardBriefing(items), [items]);
+
+  useEffect(() => {
+    if (
+      storageMode === "saved" &&
+      section === "Dashboard" &&
+      previousPendingSaves.current > 0 &&
+      pendingSaves === 0
+    )
+      setDashboardAttempt((value) => value + 1);
+    previousPendingSaves.current = pendingSaves;
+  }, [pendingSaves, section, storageMode]);
+
+  useEffect(() => {
+    if (storageMode !== "saved") return;
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
+      setDashboardBriefing(null);
+      setDashboardError("");
+    });
+    dashboardApi()
+      .then((briefing) => {
+        if (active) setDashboardBriefing(briefing);
+      })
+      .catch((error: unknown) => {
+        if (active)
+          setDashboardError(
+            error instanceof Error
+              ? error.message
+              : "Recent activity could not be loaded.",
+          );
+      });
+    return () => {
+      active = false;
+    };
+  }, [storageMode, dashboardAttempt]);
+
+  useEffect(() => {
+    if (
+      storageMode !== "saved" ||
+      section !== "Dashboard" ||
+      !dashboardBriefing ||
+      acknowledgedDashboard.current.has(dashboardBriefing.asOf)
+    )
+      return;
+    acknowledgedDashboard.current.add(dashboardBriefing.asOf);
+    void markDashboardVisited(dashboardBriefing.asOf).catch(() => {
+      acknowledgedDashboard.current.delete(dashboardBriefing.asOf);
+    });
+  }, [dashboardBriefing, section, storageMode]);
 
   const filtered = useMemo(
     () =>
-      filterInventory(items, { query, kind, location, sort }).filter(
+      filterInventory(items, {
+        query,
+        kind,
+        location: location === "Home" ? "all" : location,
+        sort,
+      }).filter(
         (item) =>
+          (location !== "Home" ||
+            item.location_name === "Home" ||
+            (storageMode === "sample" &&
+              places.some(
+                (place) =>
+                  place.parent === "Home" && place.name === item.location_name,
+              ))) &&
           (category === "all" || item.category === category) &&
           (status === "all" || item.status === status) &&
           (section !== "Favorites" || item.tags.includes("favorite")) &&
-          (section !== "Missing" || item.status === "lost") &&
           (!tagFilter || item.tags.includes(tagFilter)),
       ),
-    [items, kind, location, query, sort, category, status, section, tagFilter],
+    [
+      items,
+      kind,
+      location,
+      query,
+      sort,
+      category,
+      status,
+      section,
+      tagFilter,
+      places,
+      storageMode,
+    ],
   );
   const selected =
     items.find((item) => item.id === selectedId) ?? items[0] ?? null;
-  const previewHome =
-    section === "Home" &&
-    view === "grid" &&
-    !query &&
-    kind === "all" &&
-    category === "all" &&
-    status === "all";
-  const visibleItems = previewHome
-    ? filtered.filter((item) => item.kind !== "container").slice(0, 17)
-    : filtered;
+  const visibleItems = filtered;
   const placementOptions = [
     ...[...new Set(locationOptions)].map((name) => ({
       value: `location:${name}`,
@@ -728,8 +1011,14 @@ export function LiquidDashboard({
     : [];
 
   function navigate(label: string, place = "all") {
+    if (
+      label === "Dashboard" &&
+      section !== "Dashboard" &&
+      storageMode === "saved"
+    )
+      setDashboardAttempt((value) => value + 1);
     setSection(label);
-    setLocation(place);
+    setLocation(label === "Home" && place === "all" ? "Home" : place);
     setOpenedContainer(null);
     setCategory("all");
     setStatus("all");
@@ -1177,7 +1466,7 @@ export function LiquidDashboard({
       );
     if (location === deletedName) {
       setLocation("all");
-      setSection("Home");
+      setSection("All items");
       setOpenedContainer(null);
     }
     setNotice(
@@ -1328,6 +1617,10 @@ export function LiquidDashboard({
     <main className={styles.shell}>
       <div className={styles.workspace}>
         <aside
+          ref={railRef}
+          role={mobileNav ? "dialog" : undefined}
+          aria-modal={mobileNav ? true : undefined}
+          aria-label={mobileNav ? "Navigation" : undefined}
           className={`${styles.rail} ${mobileNav ? styles.mobileNavOpen : ""}`}
         >
           <header className={styles.brand}>
@@ -1345,11 +1638,10 @@ export function LiquidDashboard({
           </header>
           <nav className={styles.primaryNav} aria-label="Main navigation">
             {[
-              { label: "Home", Icon: House },
+              { label: "Dashboard", Icon: House },
               { label: "Spaces", Icon: Buildings },
               { label: "All items", Icon: List },
               { label: "Favorites", Icon: Star },
-              { label: "Missing", Icon: MagnifyingGlass },
               { label: "Tags", Icon: Tag },
             ].map(({ label, Icon }) => (
               <button
@@ -1360,7 +1652,9 @@ export function LiquidDashboard({
               >
                 <Icon
                   weight={
-                    section === label && label === "Home" ? "fill" : "regular"
+                    section === label && label === "Dashboard"
+                      ? "fill"
+                      : "regular"
                   }
                 />
                 <span>{label}</span>
@@ -1384,95 +1678,137 @@ export function LiquidDashboard({
             </button>
           </div>
           <nav className={styles.spaceNav} aria-label="Inventory locations">
-            <button
-              className={styles.homeSpace}
-              onClick={() => navigate("Home")}
-            >
-              <CaretDown />
-              <House weight="fill" />
-              <span>Home</span>
-            </button>
-            <div className={styles.roomTree}>
-              {(storageMode === "saved"
-                ? locations.map((place) => place.name)
-                : places
-                    .filter((place) =>
-                      [
-                        "Bedroom",
-                        "Bathroom",
-                        "Kitchen",
-                        "Living Room",
-                      ].includes(place.name),
-                    )
-                    .map((place) => place.name)
-              ).map((room) => (
-                <button
-                  key={room}
-                  aria-pressed={location === room}
-                  className={location === room ? styles.activeRoom : ""}
-                  onClick={() => navigate(room, room)}
-                >
-                  <Folder />
-                  <span>{room}</span>
-                </button>
-              ))}
-              {location === "Bedroom" &&
-                items
-                  .filter(
-                    (item) =>
-                      item.kind === "container" &&
-                      item.location_name === "Bedroom",
-                  )
-                  .map((container) => (
-                    <button
-                      key={container.id}
-                      className={styles.containerNav}
-                      onClick={() => {
-                        setOpenedContainer(container.id);
-                        setKind("all");
-                      }}
-                    >
-                      <Archive />
-                      <span>{container.name}</span>
-                    </button>
-                  ))}
-            </div>
+            {locationOptions.includes("Home") && (
+              <>
+                <div className={styles.spaceBranchRow}>
+                  <button
+                    className={styles.homeSpace}
+                    aria-expanded={!!expandedSpaces.Home}
+                    aria-controls="home-space-children"
+                    onClick={() => {
+                      navigate("Home");
+                      toggleSpace("Home");
+                    }}
+                    aria-pressed={location === "Home"}
+                  >
+                    <House weight="fill" />
+                    <span>Home</span>
+                    {expandedSpaces.Home ? (
+                      <CaretDown className={styles.navChevron} />
+                    ) : (
+                      <CaretRight className={styles.navChevron} />
+                    )}
+                  </button>
+                </div>
+                {expandedSpaces.Home && (
+                  <div className={styles.roomTree} id="home-space-children">
+                    {(storageMode === "saved"
+                      ? []
+                      : places
+                          .filter((place) => place.parent === "Home")
+                          .map((place) => place.name)
+                    ).map((room) => (
+                      <Fragment key={room}>
+                        <div className={styles.spaceBranchRow}>
+                          <button
+                            aria-pressed={location === room}
+                            className={
+                              location === room ? styles.activeRoom : ""
+                            }
+                            aria-expanded={!!expandedSpaces[room]}
+                            onClick={() => {
+                              navigate(room, room);
+                              toggleSpace(room);
+                            }}
+                          >
+                            <Folder />
+                            <span>{room}</span>
+                            {expandedSpaces[room] ? (
+                              <CaretDown className={styles.navChevron} />
+                            ) : (
+                              <CaretRight className={styles.navChevron} />
+                            )}
+                          </button>
+                        </div>
+                        {expandedSpaces[room] && (
+                          <div className={styles.containerTree}>
+                            <SidebarContainerTree
+                              items={items}
+                              spaceName={room}
+                              onOpen={(container) => {
+                                navigate(room, room);
+                                setOpenedContainer(container.id);
+                              }}
+                            />
+                          </div>
+                        )}
+                      </Fragment>
+                    ))}
+                    {storageMode === "saved" && (
+                      <div className={styles.containerTree}>
+                        <SidebarContainerTree
+                          items={items}
+                          spaceName="Home"
+                          onOpen={(container) => {
+                            navigate("Home");
+                            setOpenedContainer(container.id);
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
             {navigation
               .filter(
-                (entry) => entry.value !== "all" && storageMode !== "saved",
+                (entry) => entry.value !== "all" && entry.value !== "Home",
               )
               .map(({ label, value, Icon, icon, color, place }) => (
-                <button
-                  key={value}
-                  className={location === value ? styles.activeNav : ""}
-                  data-place-icon={icon}
-                  style={
-                    color
-                      ? ({ "--place-color": color } as CSSProperties)
-                      : undefined
-                  }
-                  onClick={() => navigate(label, value)}
-                  onDoubleClick={() => place && openEditPlace(place)}
-                  aria-pressed={location === value}
-                  title={place ? `Double-click to edit ${label}` : undefined}
-                >
-                  <Icon />
-                  <span>{label}</span>
-                  <CaretRight className={styles.navChevron} />
-                </button>
+                <Fragment key={value}>
+                  <div className={styles.spaceBranchRow}>
+                    <button
+                      className={location === value ? styles.activeNav : ""}
+                      data-place-icon={icon}
+                      style={
+                        color
+                          ? ({ "--place-color": color } as CSSProperties)
+                          : undefined
+                      }
+                      onClick={() => {
+                        navigate(label, value);
+                        toggleSpace(value);
+                      }}
+                      onDoubleClick={() => place && openEditPlace(place)}
+                      aria-pressed={location === value}
+                      aria-expanded={!!expandedSpaces[value]}
+                      title={
+                        place ? `Double-click to edit ${label}` : undefined
+                      }
+                    >
+                      <Icon />
+                      <span>{label}</span>
+                      {expandedSpaces[value] ? (
+                        <CaretDown className={styles.navChevron} />
+                      ) : (
+                        <CaretRight className={styles.navChevron} />
+                      )}
+                    </button>
+                  </div>
+                  {expandedSpaces[value] && (
+                    <div className={styles.containerTree}>
+                      <SidebarContainerTree
+                        items={items}
+                        spaceName={value}
+                        onOpen={(container) => {
+                          navigate(label, value);
+                          setOpenedContainer(container.id);
+                        }}
+                      />
+                    </div>
+                  )}
+                </Fragment>
               ))}
-            {storageMode === "sample" && (
-              <button
-                onClick={() => {
-                  navigate("Travel");
-                  setTagFilter("travel");
-                }}
-              >
-                <AirplaneTilt />
-                <span>Travel</span>
-                <CaretRight className={styles.navChevron} />
-              </button>
-            )}
           </nav>
           <div className={styles.sidebarBottom}>
             <button
@@ -1515,12 +1851,14 @@ export function LiquidDashboard({
           <button
             className={styles.mobileScrim}
             aria-label="Dismiss navigation"
+            tabIndex={-1}
             onClick={() => setMobileNav(false)}
           />
         )}
 
         <section
-          className={`${styles.library} ${query ? styles.searching : ""}`}
+          inert={mobileNav}
+          className={`${styles.library} ${query ? styles.searching : ""} ${dashboardLanding ? styles.dashboardLibrary : ""}`}
         >
           {spacesLanding && (
             <button
@@ -1531,7 +1869,7 @@ export function LiquidDashboard({
               <List />
             </button>
           )}
-          {!spacesLanding && (
+          {!spacesLanding && !dashboardLanding && (
             <>
               <div className={styles.toolbar}>
                 <button
@@ -1658,7 +1996,6 @@ export function LiquidDashboard({
                     { value: "active", label: "Active" },
                     { value: "stored", label: "Stored" },
                     { value: "lent", label: "Lent" },
-                    { value: "lost", label: "Missing" },
                   ]}
                 />
                 {view === "list" && (
@@ -1770,184 +2107,210 @@ export function LiquidDashboard({
               )}
             </>
           )}
-          <div className={query ? styles.searchLayout : undefined}>
-            <div className={styles.resultsContent}>
-              {spacesLanding && (
-                <SpacesBrowser
-                  spaces={managedPlaces}
-                  items={items}
-                  onOpen={(name) => navigate(name, name)}
-                  onAdd={openAddPlace}
-                  onEdit={(name) => {
-                    const place = managedPlaces.find(
-                      (place) => place.name === name,
-                    );
-                    if (place) openEditPlace(place);
-                  }}
-                  onDelete={(name) => {
-                    const place = managedPlaces.find(
-                      (place) => place.name === name,
-                    );
-                    if (place) {
-                      openEditPlace(place);
-                      setDeletingPlace(true);
-                    }
-                  }}
-                />
-              )}
-              {spacesLanding && (
-                <h2 className={styles.spaceContainersTitle}>Containers</h2>
-              )}
-              {query && (
-                <h2 className={styles.resultsTitle}>
-                  {searchTab === "All results" ? "Items" : searchTab}{" "}
-                  <span>
-                    (
-                    {searchTab === "Locations"
-                      ? locationOptions.filter((name) =>
+          {dashboardLanding ? (
+            <InventoryDashboard
+              briefing={
+                storageMode === "sample" ? sampleBriefing : dashboardBriefing
+              }
+              items={items}
+              accountEmail={accountEmail}
+              sample={storageMode === "sample"}
+              loading={
+                storageMode === "saved" && !dashboardBriefing && !dashboardError
+              }
+              error={dashboardError}
+              mobileNavigation={
+                <button
+                  className={styles.mobileMenu}
+                  onClick={() => setMobileNav(true)}
+                  aria-label="Open navigation"
+                >
+                  <List />
+                </button>
+              }
+              onRetry={() => setDashboardAttempt((value) => value + 1)}
+              onAsk={(text) => {
+                setPromptRequest({ text, id: Date.now(), submit: true });
+                setChatOpen(true);
+                setDetailsOpen(false);
+              }}
+              onSelectItem={(id) => {
+                const item = items.find((row) => row.id === id);
+                if (item) selectItem(item);
+              }}
+            />
+          ) : (
+            <>
+              <div className={query ? styles.searchLayout : undefined}>
+                <div className={styles.resultsContent}>
+                  {spacesLanding && (
+                    <SpacesBrowser
+                      spaces={managedPlaces}
+                      items={items}
+                      onOpen={(name) => navigate(name, name)}
+                      onAdd={openAddPlace}
+                      onEdit={(name) => {
+                        const place = managedPlaces.find(
+                          (place) => place.name === name,
+                        );
+                        if (place) openEditPlace(place);
+                      }}
+                      onDelete={(name) => {
+                        const place = managedPlaces.find(
+                          (place) => place.name === name,
+                        );
+                        if (place) {
+                          openEditPlace(place);
+                          setDeletingPlace(true);
+                        }
+                      }}
+                    />
+                  )}
+                  {spacesLanding && (
+                    <h2 className={styles.spaceContainersTitle}>Containers</h2>
+                  )}
+                  {query && (
+                    <h2 className={styles.resultsTitle}>
+                      {searchTab === "All results" ? "Items" : searchTab}{" "}
+                      <span>
+                        (
+                        {searchTab === "Locations"
+                          ? locationOptions.filter((name) =>
+                              name.toLowerCase().includes(query.toLowerCase()),
+                            ).length
+                          : filtered.filter((item) =>
+                              searchTab === "Containers"
+                                ? item.kind === "container"
+                                : item.kind !== "container",
+                            ).length}
+                        )
+                      </span>
+                    </h2>
+                  )}
+                  {query && searchTab === "Locations" ? (
+                    <div className={styles.locationResults}>
+                      {locationOptions
+                        .filter((name) =>
                           name.toLowerCase().includes(query.toLowerCase()),
-                        ).length
-                      : filtered.filter((item) =>
-                          searchTab === "Containers"
-                            ? item.kind === "container"
-                            : item.kind !== "container",
-                        ).length}
-                    )
-                  </span>
-                </h2>
-              )}
-              {query && searchTab === "Locations" ? (
-                <div className={styles.locationResults}>
-                  {locationOptions
-                    .filter((name) =>
-                      name.toLowerCase().includes(query.toLowerCase()),
-                    )
-                    .map((name) => (
-                      <button key={name} onClick={() => navigate(name, name)}>
-                        <Folder />
-                        <span>{name}</span>
-                        <CaretRight />
+                        )
+                        .map((name) => (
+                          <button
+                            key={name}
+                            onClick={() => navigate(name, name)}
+                          >
+                            <Folder />
+                            <span>{name}</span>
+                            <CaretRight />
+                          </button>
+                        ))}
+                    </div>
+                  ) : (
+                    <ContainerGrid
+                      items={items}
+                      visible={
+                        query && searchTab === "Containers"
+                          ? filtered.filter((item) => item.kind === "container")
+                          : visibleItems
+                      }
+                      sort={sort}
+                      selectedId={detailsOpen ? selected?.id : undefined}
+                      view={query ? "list" : view}
+                      opened={openedContainer}
+                      onOpen={(id) => {
+                        setOpenedContainer(id);
+                        if (id) {
+                          setKind("all");
+                          setQuery("");
+                        }
+                      }}
+                      showContainers={
+                        (query && searchTab === "Containers") ||
+                        section === "Spaces" ||
+                        kind === "container" ||
+                        location !== "all"
+                      }
+                      queryActive={
+                        Boolean(query.trim()) ||
+                        kind !== "all" ||
+                        location !== "all"
+                      }
+                      onSelect={selectItem}
+                      onAddItem={addItem}
+                      onAddContainer={addContainer}
+                    />
+                  )}
+                </div>
+                {query && (
+                  <aside className={styles.searchSuggestions}>
+                    <h3>Suggested</h3>
+                    {[
+                      "Where are my camera accessories?",
+                      "Show the items in my cabinet.",
+                      "What do I have for camping?",
+                      "Add a camera battery to my backpack.",
+                    ].map((question) => (
+                      <button
+                        key={question}
+                        onClick={() => {
+                          setPromptRequest({ text: question, id: Date.now() });
+                          setChatOpen(true);
+                          setDetailsOpen(false);
+                        }}
+                      >
+                        <Sparkle />
+                        <span>{question}</span>
                       </button>
                     ))}
-                </div>
-              ) : (
-                <ContainerGrid
-                  items={items}
-                  visible={
-                    query && searchTab === "Containers"
-                      ? filtered.filter((item) => item.kind === "container")
-                      : visibleItems
-                  }
-                  sort={sort}
-                  selectedId={detailsOpen ? selected?.id : undefined}
-                  view={query ? "list" : view}
-                  opened={openedContainer}
-                  onOpen={(id) => {
-                    setOpenedContainer(id);
-                    if (id) {
-                      setKind("all");
-                      setQuery("");
-                    }
-                  }}
-                  showContainers={
-                    (query && searchTab === "Containers") ||
-                    section === "Spaces" ||
-                    kind === "container" ||
-                    location !== "all"
-                  }
-                  queryActive={
-                    Boolean(query.trim()) ||
-                    kind !== "all" ||
-                    location !== "all"
-                  }
-                  onSelect={selectItem}
-                  onAddItem={addItem}
-                  onAddContainer={addContainer}
-                />
-              )}
-            </div>
-            {query && (
-              <aside className={styles.searchSuggestions}>
-                <h3>Suggested</h3>
-                {[
-                  "Where are my camera accessories?",
-                  "Show the items in my cabinet.",
-                  "What do I have for camping?",
-                  "Add a camera battery to my backpack.",
-                ].map((question) => (
-                  <button
-                    key={question}
-                    onClick={() => {
-                      setPromptRequest({ text: question, id: Date.now() });
-                      setChatOpen(true);
-                      setDetailsOpen(false);
-                    }}
-                  >
-                    <Sparkle />
-                    <span>{question}</span>
-                  </button>
-                ))}
-              </aside>
-            )}
-          </div>
-          {filtered.length === 0 && searchTab !== "Locations" && (
-            <div className={styles.emptyState}>
-              <Cube weight="duotone" />
-              <strong>
-                {storageMode === "saved" && !items.length
-                  ? "Your inventory starts here"
-                  : "No items found"}
-              </strong>
-              <span>
-                {storageMode === "saved" && !items.length
-                  ? "Create a place, then add your first item and photo."
-                  : "Try a different search or filter."}
-              </span>
-              {storageMode === "saved" &&
-                !items.length &&
-                !locations.length && (
-                  <button className={styles.addItem} onClick={openAddPlace}>
-                    Create your first place
-                  </button>
+                  </aside>
                 )}
-            </div>
-          )}
-          <footer className={styles.libraryFooter}>
-            {previewHome &&
-              filtered.filter((item) => item.kind !== "container").length >
-                17 && (
-                <button
-                  className={styles.viewAll}
-                  onClick={() => navigate("All items")}
-                >
-                  View all items <CaretRight />
-                </button>
+              </div>
+              {filtered.length === 0 && searchTab !== "Locations" && (
+                <div className={styles.emptyState}>
+                  <Cube weight="duotone" />
+                  <strong>
+                    {storageMode === "saved" && !items.length
+                      ? "Your inventory starts here"
+                      : "No items found"}
+                  </strong>
+                  <span>
+                    {storageMode === "saved" && !items.length
+                      ? "Create a place, then add your first item and photo."
+                      : "Try a different search or filter."}
+                  </span>
+                  {storageMode === "saved" &&
+                    !items.length &&
+                    !locations.length && (
+                      <button className={styles.addItem} onClick={openAddPlace}>
+                        Create your first place
+                      </button>
+                    )}
+                </div>
               )}
-            <span>
-              {previewHome &&
-              filtered.filter((item) => item.kind !== "container").length > 17
-                ? `Showing ${visibleItems.length} of `
-                : ""}
-              {
-                (openedContainer
-                  ? filtered.filter(
-                      (item) => item.parent_container_id === openedContainer,
-                    )
-                  : section === "Spaces"
-                    ? filtered
-                    : filtered.filter((item) => item.kind !== "container")
-                ).length
-              }{" "}
-              items
-            </span>
-            <span role="status">{storeError || notice}</span>
-            <span className={styles.storageLabel}>
-              <span className={styles.liveDot} />
-              {storageMode === "saved"
-                ? "Saved inventory"
-                : "Local sample data"}
-            </span>
-          </footer>
+              <footer className={styles.libraryFooter}>
+                <span>
+                  {
+                    (openedContainer
+                      ? filtered.filter(
+                          (item) =>
+                            item.parent_container_id === openedContainer,
+                        )
+                      : section === "Spaces"
+                        ? filtered
+                        : filtered.filter((item) => item.kind !== "container")
+                    ).length
+                  }{" "}
+                  items
+                </span>
+                <span role="status">{storeError || notice}</span>
+                <span className={styles.storageLabel}>
+                  <span className={styles.liveDot} />
+                  {storageMode === "saved"
+                    ? "Saved inventory"
+                    : "Local sample data"}
+                </span>
+              </footer>
+            </>
+          )}
         </section>
         {(detailsOpen || chatOpen) && (
           <button
@@ -2377,7 +2740,6 @@ export function LiquidDashboard({
                           { value: "active", label: "Active" },
                           { value: "stored", label: "Stored" },
                           { value: "lent", label: "Lent" },
-                          { value: "lost", label: "Missing" },
                           { value: "disposed", label: "Disposed" },
                         ]}
                       />
@@ -2531,219 +2893,223 @@ export function LiquidDashboard({
                 disabled={savingPlace}
                 className={styles.spaceFormFields}
               >
-                <div className={styles.placeDialogHeader}>
-                  <div>
-                    <span className={styles.dialogEyebrow}>
-                      {editingPlace ? "Edit space" : "New space"}
-                    </span>
-                    <h2 id="place-dialog-title">
-                      {deletingPlace
-                        ? `Delete ${editingPlace?.name}?`
-                        : editingPlace
-                          ? "Edit space"
-                          : "Add space"}
-                    </h2>
-                    <p>
-                      {deletingPlace
-                        ? "This removes only the space. Its items and containers will be kept."
-                        : editingPlace
-                          ? "Update this space’s name, icon, or color."
-                          : "Give this space a name and a little personality."}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    className={styles.dialogClose}
-                    aria-label="Close place dialog"
-                    onClick={closePlaceForm}
-                  >
-                    <X size={18} />
-                  </button>
-                </div>
-
-                {deletingPlace ? (
-                  <label
-                    className={styles.placeNameField}
-                    htmlFor="move-destination"
-                  >
-                    <span>Move items to</span>
-                    <select
-                      autoFocus
-                      id="move-destination"
-                      value={moveDestination}
-                      onChange={(event) =>
-                        setMoveDestination(event.target.value)
-                      }
-                    >
-                      <option value="">Choose a space</option>
-                      {locationOptions
-                        .filter((name) => name !== editingPlace?.name)
-                        .map((name) => (
-                          <option key={name}>{name}</option>
-                        ))}
-                    </select>
-                  </label>
-                ) : (
-                  <>
-                    <div className={styles.spaceIconPreview}>
-                      <span
-                        style={{
-                          color: placeColorOptions.find(
-                            (option) => option.value === placeColor,
-                          )?.color,
-                        }}
-                      >
-                        {(() => {
-                          const PreviewIcon =
-                            placeIconOptions.find(
-                              (option) => option.value === placeIcon,
-                            )?.Icon ?? MapPin;
-                          return <PreviewIcon weight="duotone" />;
-                        })()}
+                <div className={styles.spaceFormBody}>
+                  <div className={styles.placeDialogHeader}>
+                    <div>
+                      <span className={styles.dialogEyebrow}>
+                        {editingPlace ? "Edit space" : "New space"}
                       </span>
-                      {storageMode === "sample" && (
-                        <button
-                          type="button"
-                          aria-expanded={iconChoicesOpen}
-                          onClick={() => setIconChoicesOpen(!iconChoicesOpen)}
-                        >
-                          <GearSix />
-                          Change icon
-                        </button>
-                      )}
+                      <h2 id="place-dialog-title">
+                        {deletingPlace
+                          ? `Delete ${editingPlace?.name}?`
+                          : editingPlace
+                            ? "Edit space"
+                            : "Add space"}
+                      </h2>
+                      <p>
+                        {deletingPlace
+                          ? "This removes only the space. Its items and containers will be kept."
+                          : editingPlace
+                            ? "Update this space’s name, icon, or color."
+                            : "Give this space a name and a little personality."}
+                      </p>
                     </div>
+                    <button
+                      type="button"
+                      className={styles.dialogClose}
+                      aria-label="Close place dialog"
+                      onClick={closePlaceForm}
+                    >
+                      <X size={18} />
+                    </button>
+                  </div>
+
+                  {deletingPlace ? (
                     <label
                       className={styles.placeNameField}
-                      htmlFor="place-name"
+                      htmlFor="move-destination"
                     >
-                      <span>Place name</span>
-                      <input
-                        id="place-name"
+                      <span>Move items to</span>
+                      <select
                         autoFocus
-                        maxLength={80}
-                        value={placeName}
-                        placeholder="e.g. Garage"
-                        aria-invalid={Boolean(placeError)}
-                        aria-describedby={
-                          placeError ? "place-error" : undefined
+                        id="move-destination"
+                        value={moveDestination}
+                        onChange={(event) =>
+                          setMoveDestination(event.target.value)
                         }
-                        onChange={(event) => {
-                          setPlaceName(event.target.value);
-                          setPlaceError("");
-                        }}
-                      />
+                      >
+                        <option value="">Choose a space</option>
+                        {locationOptions
+                          .filter((name) => name !== editingPlace?.name)
+                          .map((name) => (
+                            <option key={name}>{name}</option>
+                          ))}
+                      </select>
                     </label>
+                  ) : (
+                    <>
+                      <div className={styles.spaceIconPreview}>
+                        <span
+                          style={{
+                            color: placeColorOptions.find(
+                              (option) => option.value === placeColor,
+                            )?.color,
+                          }}
+                        >
+                          {(() => {
+                            const PreviewIcon =
+                              placeIconOptions.find(
+                                (option) => option.value === placeIcon,
+                              )?.Icon ?? MapPin;
+                            return <PreviewIcon weight="duotone" />;
+                          })()}
+                        </span>
+                        {storageMode === "sample" && (
+                          <button
+                            type="button"
+                            aria-expanded={iconChoicesOpen}
+                            onClick={() => setIconChoicesOpen(!iconChoicesOpen)}
+                          >
+                            <GearSix />
+                            Change icon
+                          </button>
+                        )}
+                      </div>
+                      <label
+                        className={styles.placeNameField}
+                        htmlFor="place-name"
+                      >
+                        <span>Place name</span>
+                        <input
+                          id="place-name"
+                          autoFocus
+                          maxLength={80}
+                          value={placeName}
+                          placeholder="e.g. Garage"
+                          aria-invalid={Boolean(placeError)}
+                          aria-describedby={
+                            placeError ? "place-error" : undefined
+                          }
+                          onChange={(event) => {
+                            setPlaceName(event.target.value);
+                            setPlaceError("");
+                          }}
+                        />
+                      </label>
 
-                    {storageMode === "sample" && iconChoicesOpen && (
-                      <>
-                        <fieldset className={styles.placeChoices}>
-                          <legend>Choose an icon</legend>
-                          <div className={styles.choiceGrid}>
-                            {placeIconOptions.map((option) => {
-                              const OptionIcon = option.Icon;
-                              return (
+                      {storageMode === "sample" && iconChoicesOpen && (
+                        <>
+                          <fieldset className={styles.placeChoices}>
+                            <legend>Choose an icon</legend>
+                            <div className={styles.choiceGrid}>
+                              {placeIconOptions.map((option) => {
+                                const OptionIcon = option.Icon;
+                                return (
+                                  <label
+                                    key={option.value}
+                                    className={styles.choiceCard}
+                                  >
+                                    <input
+                                      type="radio"
+                                      name="place-icon"
+                                      value={option.value}
+                                      aria-label={option.label}
+                                      checked={placeIcon === option.value}
+                                      onChange={() =>
+                                        setPlaceIcon(option.value)
+                                      }
+                                    />
+                                    <OptionIcon
+                                      weight="duotone"
+                                      aria-hidden="true"
+                                    />
+                                    <span>{option.label}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </fieldset>
+
+                          <fieldset className={styles.placeChoices}>
+                            <legend>Highlight color</legend>
+                            <div className={styles.colorChoices}>
+                              {placeColorOptions.map((option) => (
                                 <label
                                   key={option.value}
-                                  className={styles.choiceCard}
+                                  className={styles.colorChoice}
                                 >
                                   <input
                                     type="radio"
-                                    name="place-icon"
+                                    name="place-color"
                                     value={option.value}
                                     aria-label={option.label}
-                                    checked={placeIcon === option.value}
-                                    onChange={() => setPlaceIcon(option.value)}
+                                    checked={placeColor === option.value}
+                                    onChange={() => setPlaceColor(option.value)}
                                   />
-                                  <OptionIcon
-                                    weight="duotone"
-                                    aria-hidden="true"
+                                  <span
+                                    className={styles.colorSwatch}
+                                    style={
+                                      {
+                                        "--swatch": option.color,
+                                      } as CSSProperties
+                                    }
                                   />
                                   <span>{option.label}</span>
                                 </label>
-                              );
-                            })}
-                          </div>
-                        </fieldset>
-
-                        <fieldset className={styles.placeChoices}>
-                          <legend>Highlight color</legend>
-                          <div className={styles.colorChoices}>
-                            {placeColorOptions.map((option) => (
-                              <label
-                                key={option.value}
-                                className={styles.colorChoice}
-                              >
-                                <input
-                                  type="radio"
-                                  name="place-color"
-                                  value={option.value}
-                                  aria-label={option.label}
-                                  checked={placeColor === option.value}
-                                  onChange={() => setPlaceColor(option.value)}
-                                />
-                                <span
-                                  className={styles.colorSwatch}
-                                  style={
-                                    {
-                                      "--swatch": option.color,
-                                    } as CSSProperties
-                                  }
-                                />
-                                <span>{option.label}</span>
-                              </label>
-                            ))}
-                          </div>
-                        </fieldset>
-                      </>
+                              ))}
+                            </div>
+                          </fieldset>
+                        </>
+                      )}
+                    </>
+                  )}
+                  {placeError && (
+                    <p
+                      id="place-error"
+                      className={styles.placeError}
+                      role="alert"
+                    >
+                      {placeError}
+                    </p>
+                  )}
+                  <div className={styles.placeDialogActions}>
+                    {editingPlace && !deletingPlace && (
+                      <button
+                        type="button"
+                        className={styles.dialogDelete}
+                        aria-label="Delete place"
+                        onClick={() => setDeletingPlace(true)}
+                      >
+                        Delete place
+                      </button>
                     )}
-                  </>
-                )}
-                {placeError && (
-                  <p
-                    id="place-error"
-                    className={styles.placeError}
-                    role="alert"
-                  >
-                    {placeError}
-                  </p>
-                )}
-                <div className={styles.placeDialogActions}>
-                  {editingPlace && !deletingPlace && (
                     <button
                       type="button"
-                      className={styles.dialogDelete}
-                      aria-label="Delete place"
-                      onClick={() => setDeletingPlace(true)}
+                      className={styles.dialogCancel}
+                      aria-label={
+                        editingPlace
+                          ? "Cancel editing place"
+                          : "Cancel adding place"
+                      }
+                      onClick={closePlaceForm}
                     >
-                      Delete place
+                      Cancel
                     </button>
-                  )}
-                  <button
-                    type="button"
-                    className={styles.dialogCancel}
-                    aria-label={
-                      editingPlace
-                        ? "Cancel editing place"
-                        : "Cancel adding place"
-                    }
-                    onClick={closePlaceForm}
-                  >
-                    Cancel
-                  </button>
-                  <button type="submit" className={styles.dialogCreate}>
-                    {editingPlace ? (
-                      <Check weight="bold" />
-                    ) : (
-                      <Plus weight="bold" />
-                    )}
-                    {savingPlace
-                      ? "Saving…"
-                      : deletingPlace
-                        ? "Confirm deletion"
-                        : editingPlace
-                          ? "Save changes"
-                          : "Create place"}
-                  </button>
+                    <button type="submit" className={styles.dialogCreate}>
+                      {editingPlace ? (
+                        <Check weight="bold" />
+                      ) : (
+                        <Plus weight="bold" />
+                      )}
+                      {savingPlace
+                        ? "Saving…"
+                        : deletingPlace
+                          ? "Confirm deletion"
+                          : editingPlace
+                            ? "Save changes"
+                            : "Create place"}
+                    </button>
+                  </div>
                 </div>
               </fieldset>
             </form>

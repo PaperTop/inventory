@@ -91,7 +91,9 @@
 }
 .primaryNav > button,
 .spaceNav > button,
-.roomTree > button {
+.spaceBranchRow > button,
+.roomTree > button,
+.containerBranch > button {
   display: flex;
   align-items: center;
   gap: 13px;
@@ -109,12 +111,15 @@
 }
 .primaryNav > button:hover,
 .spaceNav > button:hover,
-.roomTree > button:hover {
+.spaceBranchRow > button:hover,
+.roomTree > button:hover,
+.containerBranch > button:hover {
   background: #152e43;
   color: #eef8ff;
 }
 .primaryNav > .activeNav,
-.spaceNav > .activeNav {
+.spaceNav > .activeNav,
+.spaceBranchRow:has(> button[aria-pressed="true"]) {
   background: #1a3c63;
   color: #f3f8ff;
   box-shadow: inset 0 1px 0 #6cabed0f;
@@ -152,29 +157,38 @@
   width: 14px;
   height: 14px;
 }
-.spaceNav > .homeSpace {
-  gap: 6px;
+.spaceBranchRow > .homeSpace {
   color: #e4f0fc;
-}
-.homeSpace > svg:first-child {
-  width: 11px;
 }
 .roomTree {
   display: grid;
   padding-left: 23px;
 }
-.roomTree > button {
+.containerTree {
+  display: grid;
+  padding-left: 23px;
+}
+.roomTree > .containerTree,
+.containerBranch > .containerTree {
+  padding-left: 18px;
+}
+.containerBranch {
+  display: grid;
+}
+.roomTree > button,
+.roomTree > .spaceBranchRow > button,
+.containerBranch > button {
   font-size: 12px;
   min-height: 29px;
   padding: 5px 10px;
   gap: 10px;
 }
-.roomTree > .activeRoom {
+.roomTree > .activeRoom,
+.roomTree > .spaceBranchRow:has(> .activeRoom) {
   background: #132e43;
   color: #70baff;
 }
-.roomTree > .containerNav {
-  padding-left: 28px;
+.containerBranch > .containerNav {
   font-size: 11px;
 }
 .navChevron {
@@ -182,7 +196,7 @@
   width: 12px !important;
   color: #6b8eaa;
 }
-.spaceNav > button[data-place-icon] > svg:first-child {
+.spaceNav button[data-place-icon] > svg:first-child {
   color: var(--place-color);
 }
 .sidebarBottom {
@@ -277,6 +291,10 @@
 .library {
   min-width: 0;
   padding: 18px 26px 28px;
+}
+.dashboardLibrary {
+  min-height: 100dvh;
+  padding-top: 0;
 }
 .toolbar {
   display: flex;
@@ -2030,7 +2048,7 @@
   background: #020b1680;
 }
 .spaceDrawer {
-  width: min(440px, 100vw);
+  width: min(440px, 100%);
   height: 100dvh;
   max-height: 100dvh;
   border-radius: 0;
@@ -2049,6 +2067,11 @@
 }
 .spaceDrawer .spaceFormFields {
   flex: 1;
+}
+.spaceDrawer .spaceFormBody {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100dvh - 56px);
 }
 .spaceDrawer .placeDialogHeader {
   margin-bottom: 30px;
@@ -2123,10 +2146,13 @@
 }
 @media (max-width: 600px) {
   .spaceDrawer {
-    width: 100vw;
+    width: 100%;
     padding: 22px 18px;
   }
   .spaceDrawer form {
+    min-height: calc(100dvh - 44px);
+  }
+  .spaceDrawer .spaceFormBody {
     min-height: calc(100dvh - 44px);
   }
   .spaceDrawer .placeDialogActions {
@@ -2135,4 +2161,31 @@
   .spaceDrawer .dialogDelete {
     margin-right: auto;
   }
+}
+.spaceBranchRow {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  border-radius: 6px;
+}
+.spaceBranchRow > button {
+  flex: 1;
+  min-width: 0;
+}
+.spaceBranchRow > button[aria-pressed="true"] {
+  color: #f3f8ff;
+}
+.spaceBranchRow > button > svg {
+  flex-shrink: 0;
+}
+.spaceBranchRow > button > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.emptyBranch {
+  display: block;
+  padding: 6px 12px;
+  font-size: 11px;
+  color: #809ab2;
 }

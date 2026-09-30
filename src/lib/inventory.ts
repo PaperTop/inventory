@@ -1,12 +1,6 @@
 import { z } from "zod";
 export const kinds = ["durable", "consumable", "container"] as const;
-export const statuses = [
-  "active",
-  "stored",
-  "lent",
-  "lost",
-  "disposed",
-] as const;
+export const statuses = ["active", "stored", "lent", "disposed"] as const;
 export const conditions = ["new", "good", "fair", "poor", "unknown"] as const;
 const quantity = z.number().finite().min(0).max(1_000_000_000);
 const fields = {

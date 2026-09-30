@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import Image from "next/image";
 import {
   ArrowCounterClockwise,
@@ -30,7 +36,7 @@ export function JarvisChat({
     changes: InventoryChange[],
     versions: Record<string, number>,
   ) => Promise<ChangeOutcome>;
-  promptRequest?: { text: string; id: number };
+  promptRequest?: { text: string; id: number; submit?: boolean };
 }) {
   const [prompt, setPrompt] = useState("");
   const [exchanges, setExchanges] = useState<Exchange[]>([]);
@@ -45,8 +51,15 @@ export function JarvisChat({
   );
   const transcript = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
+  const sendRequest = useEffectEvent((text: string) => {
+    void send(text);
+  });
   useEffect(() => {
     if (!promptRequest) return;
+    if (promptRequest.submit) {
+      sendRequest(promptRequest.text);
+      return;
+    }
     queueMicrotask(() => {
       setPrompt(promptRequest.text);
       input.current?.focus();
@@ -63,9 +76,8 @@ export function JarvisChat({
       transcript.current.scrollTop = transcript.current.scrollHeight;
   }, [exchanges, busy]);
 
-  async function ask(event: FormEvent) {
-    event.preventDefault();
-    const question = prompt.trim();
+  async function send(rawQuestion: string) {
+    const question = rawQuestion.trim();
     if (!question || sending.current) return;
     const requestLifecycle = lifecycle.current;
     sending.current = true;
@@ -127,6 +139,11 @@ export function JarvisChat({
     input.current?.focus();
   }
 
+  async function ask(event: FormEvent) {
+    event.preventDefault();
+    await send(prompt);
+  }
+
   function resetChat() {
     if (busy) return;
     setExchanges([]);
@@ -135,11 +152,7 @@ export function JarvisChat({
   }
 
   return (
-    <form
-      className={styles.assistant}
-      aria-label="Jarvis"
-      onSubmit={ask}
-    >
+    <form className={styles.assistant} aria-label="Jarvis" onSubmit={ask}>
       <div className={styles.assistantHeader}>
         <div className={styles.assistantTitle}>
           <span className={styles.orb}>

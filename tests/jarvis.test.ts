@@ -26,7 +26,7 @@ const rows = [
   item("tripod", "Travel tripod", { tags: ["photography"] }),
   item("card", "SD card", { description: "Memory card for my camera" }),
   item("lens", "35 mm lens", { status: "lent" }),
-  item("tent", "Tent", { status: "lost" }),
+  item("tent", "Tent", { status: "disposed" }),
   item("soap", "Soap"),
   item("contacts", "Daily contact lenses", { category: "Personal care" }),
   item("bandages", "Bandages", { category: "Health" }),

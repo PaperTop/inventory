@@ -190,7 +190,7 @@ Reusable named places owned by one user. Names are unique per user case-insensit
 | `reorder_threshold`         | Optional consumable low-stock level                               |
 | `location_id`               | Owner-matching location reference                                 |
 | `tags`                      | Lowercase text array                                              |
-| `status`                    | `active`, `stored`, `lent`, `lost`, or `disposed`                 |
+| `status`                    | `active`, `stored`, `lent`, or `disposed`                         |
 | `condition`                 | `new`, `good`, `fair`, `poor`, or `unknown`                       |
 | `attributes`                | Bounded JSON object for model, color, expiry, and similar details |
 | `version`                   | Optimistic concurrency number                                     |
@@ -204,6 +204,7 @@ Append-only evidence records contain `source`, `source_event_id`, `confidence`, 
 
 - Check constraints repeat quantity and enum validation outside the application.
 - A trigger increments `version` and timestamps every update.
+- A separate trigger records future item creates, edits, moves, and deletes as owner-scoped dashboard activity. It stores a room/name snapshot so deleted or later-moved records are not misrepresented, and it never backfills fabricated history.
 - RLS policies restrict select, insert, update, and delete by `auth.uid()`.
 - The search RPC is invoker-rights, so RLS still applies.
 - GIN indexes support tags; owner/date and owner/location indexes support common views.
@@ -318,7 +319,7 @@ type Observation = {
   proposed_patch: {
     location_id?: string | null;
     quantity?: number;
-    status?: "active" | "stored" | "lent" | "lost" | "disposed";
+    status?: "active" | "stored" | "lent" | "disposed";
   };
 };
 ```

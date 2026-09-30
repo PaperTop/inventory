@@ -30,6 +30,13 @@ it("keeps repeated packing-list revisions separate from inventory edits", () => 
     true,
   );
 });
+it("keeps dashboard planning prompts read-only even with action-like data", () => {
+  expect(
+    requestsInventoryChange(
+      "Help me review my Add camera items. Start with a read-only plan and do not make changes.",
+    ),
+  ).toBe(false);
+});
 it("preserves omitted fields and normalizes edited tags", () => {
   const [change] = prepareInventoryChanges(
     [

@@ -157,6 +157,7 @@
 .more {
   display: grid;
   place-items: center;
+  padding: 0;
   width: 29px;
   height: 28px;
   border-radius: 6px;

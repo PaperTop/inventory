@@ -174,7 +174,7 @@ export function useInventoryStore(
     return () => window.removeEventListener("beforeunload", warn);
   }, [pending]);
 
-  function patch(id: string, changes: Partial<VisualItem>) {
+  function patch(id: string, changes: Partial<VisualItem>, actor?: "jarvis") {
     if (!mounted.current) return;
     const existing = current.current.find((row) => row.id === id);
     if (!existing) return;
@@ -207,6 +207,7 @@ export function useInventoryStore(
           id,
           base.version,
           inputOf({ ...base, ...changes }),
+          actor,
         ),
       );
       ensureActive();
@@ -245,7 +246,7 @@ export function useInventoryStore(
       return result;
     });
   }
-  async function create(item: VisualItem) {
+  async function create(item: VisualItem, actor?: "jarvis") {
     if (!mounted.current) return;
     try {
       validatePlacement(item, current.current);
@@ -258,7 +259,9 @@ export function useInventoryStore(
       return item;
     }
     return run(async (ensureActive) => {
-      const created = visualItem(await apiRepository.create(inputOf(item)));
+      const created = visualItem(
+        await apiRepository.create(inputOf(item), actor),
+      );
       ensureActive();
       saved.current.set(created.id, created);
       replace(resolveHierarchy([created, ...current.current], locations));
@@ -317,11 +320,15 @@ export function useInventoryStore(
           );
         const result =
           change.type === "create"
-            ? await create(visualItem(change.item))
-            : await patch(change.item.id, {
-                ...change.item,
-                image: previous!.image,
-              });
+            ? await create(visualItem(change.item), "jarvis")
+            : await patch(
+                change.item.id,
+                {
+                  ...change.item,
+                  image: previous!.image,
+                },
+                "jarvis",
+              );
         if (!result)
           throw new Error(
             "The inventory change could not be saved. Reload inventory before trying again.",

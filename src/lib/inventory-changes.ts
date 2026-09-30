@@ -14,7 +14,7 @@ const editableFields = {
   quantity: z.number().finite().min(0).max(1_000_000_000).optional(),
   unit: z.string().trim().min(1).max(30).optional(),
   tags: z.array(z.string().trim().min(1).max(40)).max(20).optional(),
-  status: z.enum(["active", "stored", "lent", "lost"]).optional(),
+  status: z.enum(["active", "stored", "lent"]).optional(),
   condition: z.enum(conditions).optional(),
   location: z.string().trim().min(1).max(160).optional(),
 };
@@ -54,6 +54,11 @@ export function requestsInventoryChange(
   question: string,
   history: { question: string; answer: string }[] = [],
 ) {
+  if (
+    /\bread[- ]only plan\b/i.test(question) &&
+    /\bdo not (?:make|apply) changes\b/i.test(question)
+  )
+    return false;
   if (
     /\b(?:packing|shopping|suggested|camping) list\b|\b(?:trip|packing) plan\b/i.test(
       question,
