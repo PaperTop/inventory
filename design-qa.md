@@ -156,3 +156,30 @@ Plan together auto-submitted a contextual read-only prompt and received a Jarvis
 No actionable P0/P1/P2 design findings remain in the compared states. The reference has no mobile frame; mobile is judged against the agreed single-column, readable, persistent-composer behavior rather than claimed pixel equivalence.
 
 final result: passed
+
+## Dashboard-only Jarvis conversation — 2026-10-12
+
+The requested conversation now expands inline beneath the Dashboard suggestion. The chat drawer, its open/close state, extra composer, welcome panel, suggestion chips, and drawer-specific styles were removed. The main navigation rail, briefing, Spaces hierarchy, and item detail panel remain available.
+
+One mounted Jarvis conversation owns the transcript, draft, request guard, and existing service/mutation workflow. Ask Jarvis navigates to Dashboard and focuses the composer without clearing a draft. Search entries carry their prompt without submitting; Plan together submits a contextual prompt once. Pending responses, answers, citations, save outcomes, and partial-failure notices appear inline. Ordinary navigation and item opening preserve conversation history; account changes still clear private conversation state.
+
+### Browser evidence
+
+- Desktop initial state: `/private/tmp/inventory-inline-qa-13-desktop-initial-final.jpg` (1280 × 720).
+- Desktop Plan together progress and response: `/private/tmp/inventory-inline-qa-14-desktop-plan-progress-final.jpg` and `/private/tmp/inventory-inline-qa-15-desktop-plan-answer-final.jpg` (1280 × 720).
+- Desktop answer with its inventory result: `/private/tmp/inventory-inline-desktop.jpg` (1280 × 720).
+- Search entry preserving the conversation and prefilling the composer: `/private/tmp/inventory-inline-qa-16-search-entry-final.jpg`.
+- Mobile return from All items: `/private/tmp/inventory-inline-qa-12-mobile-return-final.jpg` and `/private/tmp/inventory-inline-mobile.jpg` (390 × 740). The log ends at y647.86 and the fixed composer starts at y674; the document width equals the 390-pixel viewport.
+- The in-app browser clipped captures at 390 × 844 despite correct DOM bounds. Complete 390 × 740 captures were used for mobile visual evidence.
+
+### Corrections and acceptance
+
+1. The first desktop implementation constrained the sticky composer below the visible viewport and let new content fall behind it. Including the contextual suggestion within the conversation form corrected containment. Transcript scrolling now reserves 100 pixels of clearance above the composer.
+2. Mobile navigation cleanup could restore scroll position to the top after returning to Jarvis. Delaying conversation focus and scrolling until after navigation/detail focus restoration keeps the existing response visible.
+3. Replies retain an in-progress follow-up draft and do not move keyboard focus. External prompt IDs and the request guard prevent duplicate submission, including React Strict Mode effect replay.
+
+Product Designer independently accepted desktop/mobile layout, Plan together, draft/history preservation, citation readability, reset, and composer clearance. QA independently accepted inline progress/replies, navigation and follow-up context, search entries, item opening, saved partial failure, keyboard focus, and the responsive composer. Live provider browser checks used only synthetic sample inventory; saved-account mutation and account-switch coverage used isolated test fixtures.
+
+QA ran `npm run release:check` on the final source: formatting, lint, typecheck, 228 tests passed (4 skipped), and production build passed. No remaining confirmed defects. No backend changes, live migration, deployment, commit, or push were performed for this assignment.
+
+final result: passed

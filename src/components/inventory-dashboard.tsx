@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useState, type FormEvent, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import {
   Armchair,
   ArrowRight,
@@ -10,7 +10,6 @@ import {
   CookingPot,
   Garage,
   MapPin,
-  PaperPlaneRight,
   Sparkle,
 } from "@phosphor-icons/react";
 import type { DashboardActivity, DashboardBriefing } from "@/lib/dashboard";
@@ -135,6 +134,7 @@ export function InventoryDashboard({
   loading = false,
   error = "",
   mobileNavigation,
+  conversation,
   onRetry,
   onAsk,
   onSelectItem,
@@ -146,23 +146,32 @@ export function InventoryDashboard({
   loading?: boolean;
   error?: string;
   mobileNavigation?: ReactNode;
+  conversation?: (suggestion: ReactNode) => ReactNode;
   onRetry?: () => void;
   onAsk: (prompt: string) => void;
   onSelectItem: (id: string) => void;
 }) {
-  const [prompt, setPrompt] = useState("");
   const localName = accountEmail
     ?.split("@")[0]
     ?.split(/[._-]/)[0]
     ?.replace(/^./, (character) => character.toUpperCase());
-
-  function submit(event: FormEvent) {
-    event.preventDefault();
-    const question = prompt.trim();
-    if (!question) return;
-    setPrompt("");
-    onAsk(question);
-  }
+  const suggestion = briefing?.suggestion && (
+    <div className={styles.suggestion}>
+      <Sparkle weight="duotone" aria-hidden="true" />
+      <div>
+        <p>
+          {briefing.suggestion.text}{" "}
+          <button
+            type="button"
+            onClick={() => onAsk(briefing.suggestion!.prompt)}
+          >
+            Plan together <ArrowRight weight="bold" />
+          </button>
+        </p>
+        <span>Starts a conversation · no changes made.</span>
+      </div>
+    </div>
+  );
 
   return (
     <section className={styles.dashboard} aria-labelledby="dashboard-title">
@@ -232,44 +241,7 @@ export function InventoryDashboard({
       )}
 
       <div className={styles.actions}>
-        {briefing?.suggestion && (
-          <div className={styles.suggestion}>
-            <Sparkle weight="duotone" aria-hidden="true" />
-            <div>
-              <p>
-                {briefing.suggestion.text}{" "}
-                <button
-                  type="button"
-                  onClick={() => onAsk(briefing.suggestion!.prompt)}
-                >
-                  Plan together <ArrowRight weight="bold" />
-                </button>
-              </p>
-              <span>Starts a conversation · no changes made.</span>
-            </div>
-          </div>
-        )}
-        <form
-          className={styles.composer}
-          onSubmit={submit}
-          aria-label="Ask Jarvis"
-        >
-          <label htmlFor="dashboard-jarvis-prompt">Ask Jarvis</label>
-          <input
-            id="dashboard-jarvis-prompt"
-            value={prompt}
-            onChange={(event) => setPrompt(event.target.value)}
-            placeholder="Ask Jarvis…"
-            autoComplete="off"
-          />
-          <button
-            type="submit"
-            aria-label="Send to Jarvis"
-            disabled={!prompt.trim()}
-          >
-            <PaperPlaneRight weight="bold" />
-          </button>
-        </form>
+        {conversation ? conversation(suggestion) : suggestion}
       </div>
     </section>
   );

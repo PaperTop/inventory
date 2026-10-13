@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { JarvisChat } from "../src/components/jarvis-chat";
+import { StrictMode } from "react";
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -28,7 +29,7 @@ it("does not apply a pending local change after the saved inventory takes over",
     screen.getByRole("textbox", { name: "Ask Jarvis" }),
     "Add a tent",
   );
-  await user.click(screen.getByRole("button", { name: "Send question" }));
+  await user.click(screen.getByRole("button", { name: "Send to Jarvis" }));
   rerender(<JarvisChat {...props} saved={true} />);
   await act(async () =>
     resolve({
@@ -48,7 +49,7 @@ it("does not apply a pending local change after the saved inventory takes over",
   expect(screen.getByRole("textbox", { name: "Ask Jarvis" })).toBeEnabled();
 });
 
-it("resets chat exchanges and restores the welcome state when Reset is clicked", async () => {
+it("resets conversation exchanges and returns to the minimal composer", async () => {
   vi.stubGlobal(
     "fetch",
     async () =>
@@ -69,26 +70,38 @@ it("resets chat exchanges and restores the welcome state when Reset is clicked",
   const user = userEvent.setup();
   render(<JarvisChat {...props} saved={false} />);
 
-  expect(screen.getByText(/Tell me what you’re planning/i)).toBeVisible();
-  expect(screen.queryByRole("button", { name: "Reset chat" })).toBeNull();
+  expect(
+    screen.getByRole("log", { name: "Jarvis conversation" }),
+  ).toBeEmptyDOMElement();
+  expect(
+    screen.queryByRole("button", { name: "Reset conversation" }),
+  ).toBeNull();
 
   const input = screen.getByRole("textbox", { name: "Ask Jarvis" });
   await user.type(input, "Where is my camera?");
-  await user.click(screen.getByRole("button", { name: "Send question" }));
+  await user.click(screen.getByRole("button", { name: "Send to Jarvis" }));
 
   await waitFor(() =>
     expect(screen.getByText("Here is your camera.")).toBeVisible(),
   );
-  expect(screen.queryByText(/Tell me what you’re planning/i)).toBeNull();
+  expect(
+    screen.getByRole("log", { name: "Jarvis conversation" }),
+  ).toHaveTextContent("Where is my camera?");
 
-  const resetButton = screen.getByRole("button", { name: "Reset chat" });
+  const resetButton = screen.getByRole("button", {
+    name: "Reset conversation",
+  });
   expect(resetButton).toBeVisible();
 
   await user.click(resetButton);
 
-  expect(screen.getByText(/Tell me what you’re planning/i)).toBeVisible();
+  expect(
+    screen.getByRole("log", { name: "Jarvis conversation" }),
+  ).toBeEmptyDOMElement();
   expect(screen.queryByText("Here is your camera.")).toBeNull();
-  expect(screen.queryByRole("button", { name: "Reset chat" })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Reset conversation" }),
+  ).toBeNull();
   expect(input).toHaveValue("");
   expect(input).toHaveFocus();
 });
@@ -129,4 +142,45 @@ it("submits a dashboard prompt through the existing Jarvis workflow", async () =
     await screen.findByText("Here is a read-only organization plan."),
   ).toBeVisible();
   expect(fetchMock).toHaveBeenCalledOnce();
+});
+
+it("submits a requested prompt once in Strict Mode and preserves a follow-up draft and focus while replying", async () => {
+  let finish!: (response: Response) => void;
+  const fetchMock = vi.fn(
+    () =>
+      new Promise<Response>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  const user = userEvent.setup();
+  render(
+    <StrictMode>
+      <JarvisChat
+        saved={false}
+        items={[]}
+        onSelect={() => {}}
+        onApplyChanges={async () => ({ items: [], summary: "" })}
+        promptRequest={{ id: 1, text: "Plan my camera gear", submit: true }}
+      />
+    </StrictMode>,
+  );
+  expect(screen.getByText("Plan my camera gear")).toBeVisible();
+  expect(fetchMock).toHaveBeenCalledOnce();
+  const input = screen.getByRole("textbox", { name: "Ask Jarvis" });
+  await user.type(input, "What else do I need?");
+  expect(screen.getByRole("button", { name: "Send to Jarvis" })).toBeDisabled();
+  await act(async () =>
+    finish(
+      Response.json({
+        mode: "ai",
+        answer: "Bring your camera.",
+        citations: [],
+      }),
+    ),
+  );
+  expect(await screen.findByText("Bring your camera.")).toBeVisible();
+  expect(input).toHaveValue("What else do I need?");
+  expect(input).toHaveFocus();
+  expect(screen.getByRole("button", { name: "Send to Jarvis" })).toBeEnabled();
 });

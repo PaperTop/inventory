@@ -649,10 +649,12 @@ function defaultPlace(name: string): Place {
 function SidebarContainerTree({
   items,
   spaceName,
+  openedContainer,
   onOpen,
 }: {
   items: VisualItem[];
   spaceName: string;
+  openedContainer: string | null;
   onOpen: (container: VisualItem) => void;
 }) {
   const containers = items.filter(
@@ -677,7 +679,10 @@ function SidebarContainerTree({
         key={container.id}
       >
         <button
-          className={styles.containerNav}
+          className={`${styles.containerNav} ${openedContainer === container.id ? styles.activeNav : ""}`}
+          aria-current={
+            openedContainer === container.id ? "location" : undefined
+          }
           onClick={() => onOpen(container)}
         >
           <Archive />
@@ -794,7 +799,6 @@ export function LiquidDashboard({
   ];
   const [selectedId, setSelectedId] = useState(seedItems[0].id);
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const [chatOpen, setChatOpen] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
   const railRef = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -853,14 +857,15 @@ export function LiquidDashboard({
   const [tagFilter, setTagFilter] = useState("");
   const searchInput = useRef<HTMLInputElement>(null);
   const detailRef = useRef<HTMLElement>(null);
-  const chatRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
   const [searchTab, setSearchTab] = useState("All results");
   const [promptRequest, setPromptRequest] = useState<{
     text: string;
     id: number;
     submit?: boolean;
+    focusOnly?: boolean;
   }>();
+  const promptSequence = useRef(0);
   const [kind, setKind] = useState<InventoryViewOptions["kind"]>("all");
   const [location, setLocation] = useState("all");
   const [sort, setSort] = useState<InventoryViewOptions["sort"]>("recent");
@@ -986,6 +991,11 @@ export function LiquidDashboard({
     : `location:${selected?.location_name ?? locationOptions[0] ?? "Unassigned"}`;
 
   const currentContainer = items.find((item) => item.id === openedContainer);
+  const canAddContainer =
+    currentContainer?.kind === "container" ||
+    (locationOptions.includes(location) &&
+      (storageMode !== "saved" ||
+        locations.some((entry) => entry.name === location)));
   const containerChain = currentContainer
     ? [...ancestors(currentContainer, items), currentContainer]
     : [];
@@ -1030,6 +1040,28 @@ export function LiquidDashboard({
     setMobileNav(false);
   }
 
+  function askJarvis(text = "", submit = false, focusOnly = false) {
+    navigate("Dashboard");
+    setDetailsOpen(false);
+    setPromptRequest({ text, submit, focusOnly, id: ++promptSequence.current });
+  }
+
+  function openContainer(id: string | null) {
+    setOpenedContainer(id);
+    const spaceName = items.find((item) => item.id === id)?.location_name;
+    if (!spaceName) return;
+    setExpandedSpaces((current) => ({
+      ...current,
+      [spaceName]: true,
+      ...(storageMode === "sample" &&
+      places.some(
+        (place) => place.name === spaceName && place.parent === "Home",
+      )
+        ? { Home: true }
+        : {}),
+    }));
+  }
+
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
@@ -1039,7 +1071,6 @@ export function LiquidDashboard({
       }
       if (event.key === "Escape") {
         setDetailsOpen(false);
-        setChatOpen(false);
         setMobileNav(false);
         setFilterOpen(false);
       }
@@ -1049,9 +1080,9 @@ export function LiquidDashboard({
   }, []);
 
   useEffect(() => {
-    if (!detailsOpen && !chatOpen) return;
+    if (!detailsOpen) return;
     const previous = document.activeElement as HTMLElement | null;
-    const panel = detailsOpen ? detailRef.current : chatRef.current;
+    const panel = detailRef.current;
     panel?.querySelector<HTMLElement>("button, input")?.focus();
     const trap = (event: KeyboardEvent) => {
       if (event.key !== "Tab" || !panel) return;
@@ -1076,7 +1107,7 @@ export function LiquidDashboard({
       document.removeEventListener("keydown", trap);
       previous?.focus();
     };
-  }, [detailsOpen, chatOpen]);
+  }, [detailsOpen]);
 
   async function uploadPhoto(file: File | undefined) {
     if (!file || !selected || uploadingPhoto) return;
@@ -1480,7 +1511,6 @@ export function LiquidDashboard({
   function selectItem(item: Item) {
     setSelectedId(item.id);
     setDetailsOpen(true);
-    setChatOpen(false);
     setEditing(false);
     setNameError("");
     setShowTagSuggestions(false);
@@ -1735,9 +1765,10 @@ export function LiquidDashboard({
                             <SidebarContainerTree
                               items={items}
                               spaceName={room}
+                              openedContainer={openedContainer}
                               onOpen={(container) => {
                                 navigate(room, room);
-                                setOpenedContainer(container.id);
+                                openContainer(container.id);
                               }}
                             />
                           </div>
@@ -1749,9 +1780,10 @@ export function LiquidDashboard({
                         <SidebarContainerTree
                           items={items}
                           spaceName="Home"
+                          openedContainer={openedContainer}
                           onOpen={(container) => {
                             navigate("Home");
-                            setOpenedContainer(container.id);
+                            openContainer(container.id);
                           }}
                         />
                       </div>
@@ -1800,9 +1832,10 @@ export function LiquidDashboard({
                       <SidebarContainerTree
                         items={items}
                         spaceName={value}
+                        openedContainer={openedContainer}
                         onOpen={(container) => {
                           navigate(label, value);
-                          setOpenedContainer(container.id);
+                          openContainer(container.id);
                         }}
                       />
                     </div>
@@ -1813,10 +1846,7 @@ export function LiquidDashboard({
           <div className={styles.sidebarBottom}>
             <button
               className={styles.jarvisLauncher}
-              onClick={() => {
-                setChatOpen(true);
-                setDetailsOpen(false);
-              }}
+              onClick={() => askJarvis("", false, true)}
               aria-label="Open Jarvis"
             >
               <Sparkle weight="fill" />
@@ -1903,13 +1933,23 @@ export function LiquidDashboard({
                     <kbd>⌘ K</kbd>
                   )}
                 </label>
-                <button
-                  className={styles.addItem}
-                  aria-label="Add item"
-                  onClick={() => addItem(openedContainer ?? undefined)}
-                >
-                  <Plus /> <span>Add item</span>
-                </button>
+                <div className={styles.creationActions}>
+                  <button
+                    className={styles.addItem}
+                    aria-label="Add item"
+                    onClick={() => addItem(openedContainer ?? undefined)}
+                  >
+                    <Plus /> <span>Add item</span>
+                  </button>
+                  {canAddContainer && (
+                    <button
+                      className={styles.addContainer}
+                      onClick={() => addContainer(openedContainer ?? undefined)}
+                    >
+                      <Folder /> <span>Add container</span>
+                    </button>
+                  )}
+                </div>
                 <button
                   className={styles.filterButton}
                   aria-label="More filters"
@@ -1934,9 +1974,7 @@ export function LiquidDashboard({
                       aria-pressed={searchTab === label}
                       onClick={() => {
                         if (label === "Ask Jarvis") {
-                          setPromptRequest({ text: query, id: Date.now() });
-                          setChatOpen(true);
-                          setDetailsOpen(false);
+                          askJarvis(query);
                         } else setSearchTab(label);
                       }}
                     >
@@ -1964,7 +2002,7 @@ export function LiquidDashboard({
                 {containerChain.map((container) => (
                   <span key={container.id}>
                     <CaretRight />
-                    <button onClick={() => setOpenedContainer(container.id)}>
+                    <button onClick={() => openContainer(container.id)}>
                       {container.name}
                     </button>
                   </span>
@@ -2061,12 +2099,6 @@ export function LiquidDashboard({
                     ]}
                   />
                   <button
-                    className={styles.addContainer}
-                    onClick={() => addContainer(openedContainer ?? undefined)}
-                  >
-                    <Folder /> Add container
-                  </button>
-                  <button
                     onClick={() => {
                       setCategory("all");
                       setStatus("all");
@@ -2107,7 +2139,7 @@ export function LiquidDashboard({
               )}
             </>
           )}
-          {dashboardLanding ? (
+          <div hidden={!dashboardLanding}>
             <InventoryDashboard
               briefing={
                 storageMode === "sample" ? sampleBriefing : dashboardBriefing
@@ -2129,17 +2161,31 @@ export function LiquidDashboard({
                 </button>
               }
               onRetry={() => setDashboardAttempt((value) => value + 1)}
-              onAsk={(text) => {
-                setPromptRequest({ text, id: Date.now(), submit: true });
-                setChatOpen(true);
-                setDetailsOpen(false);
-              }}
+              onAsk={(text) => askJarvis(text, true)}
+              conversation={(suggestion) => (
+                <JarvisChat
+                  promptRequest={promptRequest}
+                  active={dashboardLanding && !detailsOpen && !mobileNav}
+                  items={items}
+                  saved={storageMode === "saved"}
+                  onApplyChanges={(changes, versions) =>
+                    store.applyChanges(changes, versions, locationOptions)
+                  }
+                  onSelect={(id) => {
+                    const item = items.find((row) => row.id === id);
+                    if (item) selectItem(item);
+                  }}
+                >
+                  {suggestion}
+                </JarvisChat>
+              )}
               onSelectItem={(id) => {
                 const item = items.find((row) => row.id === id);
                 if (item) selectItem(item);
               }}
             />
-          ) : (
+          </div>
+          {!dashboardLanding && (
             <>
               <div className={query ? styles.searchLayout : undefined}>
                 <div className={styles.resultsContent}>
@@ -2217,7 +2263,7 @@ export function LiquidDashboard({
                       view={query ? "list" : view}
                       opened={openedContainer}
                       onOpen={(id) => {
-                        setOpenedContainer(id);
+                        openContainer(id);
                         if (id) {
                           setKind("all");
                           setQuery("");
@@ -2236,7 +2282,6 @@ export function LiquidDashboard({
                       }
                       onSelect={selectItem}
                       onAddItem={addItem}
-                      onAddContainer={addContainer}
                     />
                   )}
                 </div>
@@ -2251,11 +2296,7 @@ export function LiquidDashboard({
                     ].map((question) => (
                       <button
                         key={question}
-                        onClick={() => {
-                          setPromptRequest({ text: question, id: Date.now() });
-                          setChatOpen(true);
-                          setDetailsOpen(false);
-                        }}
+                        onClick={() => askJarvis(question)}
                       >
                         <Sparkle />
                         <span>{question}</span>
@@ -2312,13 +2353,12 @@ export function LiquidDashboard({
             </>
           )}
         </section>
-        {(detailsOpen || chatOpen) && (
+        {detailsOpen && (
           <button
             className={styles.panelScrim}
             aria-label="Dismiss panel"
             onClick={() => {
               setDetailsOpen(false);
-              setChatOpen(false);
             }}
           />
         )}
@@ -2376,7 +2416,15 @@ export function LiquidDashboard({
                       <input
                         value={editing ? editName : selected.name}
                         readOnly={!editing}
-                        onBlur={finishEditing}
+                        onBlur={(event) => {
+                          if (
+                            !editName.trim() ||
+                            !event.relatedTarget?.hasAttribute(
+                              "data-item-edit-toggle",
+                            )
+                          )
+                            finishEditing();
+                        }}
                         onKeyDown={(event) => {
                           if (event.key === "Enter") event.currentTarget.blur();
                         }}
@@ -2417,6 +2465,7 @@ export function LiquidDashboard({
                     <div className={styles.moreMenuWrap}>
                       <button
                         className={styles.editButton}
+                        data-item-edit-toggle=""
                         onClick={editing ? finishEditing : startEditing}
                       >
                         <PencilSimple />
@@ -2824,29 +2873,6 @@ export function LiquidDashboard({
               )}
             </aside>
           )}
-          <div ref={chatRef} className={styles.chatPanel} hidden={!chatOpen}>
-            <button
-              className={styles.closeChat}
-              aria-label="Close Jarvis"
-              onClick={() => setChatOpen(false)}
-            >
-              <X />
-            </button>
-            <JarvisChat
-              promptRequest={promptRequest}
-              items={items}
-              saved={storageMode === "saved"}
-              onApplyChanges={(changes, versions) =>
-                store.applyChanges(changes, versions, locationOptions)
-              }
-              onSelect={(id) => {
-                setSelectedId(id);
-                setDetailsOpen(true);
-                setChatOpen(false);
-                setEditing(false);
-              }}
-            />
-          </div>
         </div>
       </div>
 

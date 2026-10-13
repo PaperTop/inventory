@@ -27,6 +27,36 @@ afterEach(() => {
 });
 
 describe("navy workspace navigation", () => {
+  it("highlights only the open container through cards, tree and breadcrumbs, then clears it on leaving", async () => {
+    const user = userEvent.setup();
+    render(<LiquidDashboard />);
+    const nav = screen.getByRole("navigation", { name: "Inventory locations" });
+    await user.click(screen.getByRole("button", { name: "Spaces" }));
+    await user.click(screen.getByRole("button", { name: "Open Cabinet" }));
+    const cabinet = within(nav).getByRole("button", { name: "Cabinet" });
+    const drawer = within(nav).getByRole("button", { name: "Drawer" });
+    expect(cabinet).toHaveAttribute("aria-current", "location");
+    expect(cabinet).toHaveClass(styles.activeNav);
+    expect(drawer).not.toHaveAttribute("aria-current");
+    await user.click(drawer);
+    expect(drawer).toHaveAttribute("aria-current", "location");
+    expect(cabinet).not.toHaveAttribute("aria-current");
+    expect(cabinet).not.toHaveClass(styles.activeNav);
+    const breadcrumb = screen.getByRole("navigation", {
+      name: "Inventory breadcrumb",
+    });
+    await user.click(
+      within(breadcrumb).getByRole("button", { name: "Cabinet" }),
+    );
+    expect(cabinet).toHaveAttribute("aria-current", "location");
+    expect(drawer).not.toHaveAttribute("aria-current");
+    await user.click(screen.getByRole("button", { name: "Close container" }));
+    expect(nav.querySelector("[aria-current]")).toBeNull();
+    await user.click(drawer);
+    await user.click(screen.getByRole("button", { name: "All items" }));
+    expect(nav.querySelector("[aria-current]")).toBeNull();
+  });
+
   it("keeps keyboard focus inside the open mobile navigation and restores it on close", async () => {
     const user = userEvent.setup();
     renderView(<LiquidDashboard />);
@@ -276,7 +306,7 @@ describe("liquid dashboard interactions", () => {
       "Add a camping tent in College",
     );
     await user.click(
-      within(chat).getByRole("button", { name: "Send question" }),
+      within(chat).getByRole("button", { name: "Send to Jarvis" }),
     );
     expect(await within(chat).findByText("Added Camping tent.")).toBeVisible();
     await user.click(
@@ -297,7 +327,7 @@ describe("liquid dashboard interactions", () => {
       "Rename my backpack to Hiking backpack and tag it camping",
     );
     await user.click(
-      within(chat).getByRole("button", { name: "Send question" }),
+      within(chat).getByRole("button", { name: "Send to Jarvis" }),
     );
     expect(
       await within(chat).findByText("Updated Hiking backpack."),
@@ -333,7 +363,7 @@ describe("liquid dashboard interactions", () => {
       "Add a tent and update my backpack",
     );
     await user.click(
-      within(chat).getByRole("button", { name: "Send question" }),
+      within(chat).getByRole("button", { name: "Send to Jarvis" }),
     );
     expect(
       await within(chat).findByText("No items were changed."),
@@ -404,7 +434,7 @@ describe("liquid dashboard interactions", () => {
       screen.getByRole("textbox", { name: "Ask Jarvis" }),
       "Where is my telescope?",
     );
-    await user.click(screen.getByRole("button", { name: "Send question" }));
+    await user.click(screen.getByRole("button", { name: "Send to Jarvis" }));
     expect(
       await screen.findByText("Your telescope is in the attic."),
     ).toBeVisible();
@@ -419,17 +449,17 @@ describe("liquid dashboard interactions", () => {
       json: async () => ({ error: "Please sign in" }),
     }));
     render(<LiquidDashboard />);
-    await user.click(screen.getByRole("button", { name: "Open Jarvis" }));
     await user.click(
       within(
         screen.getByRole("navigation", { name: "Inventory locations" }),
       ).getByRole("button", { name: "Car" }),
     );
+    await user.click(screen.getByRole("button", { name: "Open Jarvis" }));
     await user.type(
       screen.getByRole("textbox", { name: "Ask Jarvis" }),
       "Where is my backpack?",
     );
-    await user.click(screen.getByRole("button", { name: "Send question" }));
+    await user.click(screen.getByRole("button", { name: "Send to Jarvis" }));
     expect(await screen.findByText(/Local inventory/)).toBeVisible();
     expect(screen.getByText(/Backpack — 1 pc; College/)).toBeVisible();
   });
@@ -447,7 +477,7 @@ describe("liquid dashboard interactions", () => {
       "Do I have anything to take pictures?",
     );
     await user.click(
-      within(chat).getByRole("button", { name: "Send question" }),
+      within(chat).getByRole("button", { name: "Send to Jarvis" }),
     );
     await user.click(
       await within(chat).findByRole("button", { name: "Open Camera" }),
@@ -461,7 +491,7 @@ describe("liquid dashboard interactions", () => {
     await user.click(screen.getByRole("button", { name: "Open Jarvis" }));
     await user.type(within(chat).getByRole("textbox"), "Pack me for camping");
     await user.click(
-      within(chat).getByRole("button", { name: "Send question" }),
+      within(chat).getByRole("button", { name: "Send to Jarvis" }),
     );
     expect(
       await within(chat).findByText(/starting packing list/),
@@ -993,16 +1023,45 @@ describe("liquid dashboard interactions", () => {
     ).toBeVisible();
   });
 
-  it("creates a nested container from an open container", async () => {
+  it("offers one visible container action in a space without opening filters", async () => {
+    const user = userEvent.setup();
+    render(<LiquidDashboard />);
+    expect(screen.queryByRole("button", { name: "Add container" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Spaces" }));
+    await user.click(screen.getByRole("button", { name: "Open Bedroom" }));
+    expect(
+      screen.getByRole("button", { name: "More filters" }),
+    ).toHaveAttribute("aria-expanded", "false");
+    const create = screen.getByRole("button", { name: "Add container" });
+    expect(create).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "More filters" }));
+    expect(
+      screen.getAllByRole("button", { name: "Add container" }),
+    ).toHaveLength(1);
+    await user.click(create);
+    expect(
+      screen.getByRole("combobox", { name: "Item location" }),
+    ).toHaveTextContent("Bedroom");
+    const name = screen.getByRole("textbox", { name: "Item name" });
+    await user.clear(name);
+    await user.type(name, "Packing box");
+    await user.click(screen.getByRole("button", { name: "Done" }));
+    expect(screen.getByRole("button", { name: "Edit" })).toBeVisible();
+    await user.click(
+      screen.getByRole("button", { name: "Close item details" }),
+    );
+    expect(
+      screen.getByRole("button", { name: "Open Packing box" }),
+    ).toBeVisible();
+  });
+
+  it("creates a nested container from the visible toolbar action", async () => {
     const user = userEvent.setup();
     render(<LiquidDashboard />);
     await user.click(screen.getByRole("button", { name: "Spaces" }));
 
     await user.click(screen.getByRole("button", { name: "Open Cabinet" }));
-    const cabinet = screen.getByRole("region", { name: "Cabinet contents" });
-    await user.click(
-      within(cabinet).getByRole("button", { name: "Add container" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Add container" }));
 
     expect(
       screen.getByRole("button", { name: "Open New container" }),

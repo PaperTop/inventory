@@ -214,11 +214,14 @@ it("clears chat on an account switch and ignores its late answer", async () => {
   let answer!: (response: unknown) => void;
   vi.stubGlobal(
     "fetch",
-    vi.fn(
-      () =>
-        new Promise((resolve) => {
-          answer = resolve;
-        }),
+    vi.fn((path: string) =>
+      path === "/api/ask"
+        ? new Promise((resolve) => {
+            answer = resolve;
+          })
+        : Promise.resolve(
+            Response.json({ error: "Unavailable" }, { status: 503 }),
+          ),
     ),
   );
   const user = userEvent.setup();
@@ -230,7 +233,7 @@ it("clears chat on an account switch and ignores its late answer", async () => {
     screen.getByRole("textbox", { name: "Ask Jarvis" }),
     "My private question",
   );
-  await user.click(screen.getByRole("button", { name: "Send question" }));
+  await user.click(screen.getByRole("button", { name: "Send to Jarvis" }));
   expect(screen.getByText("My private question")).toBeVisible();
   vi.mocked(apiRepository.list).mockResolvedValue([]);
   act(() => emit("SIGNED_IN", { user: second }));

@@ -1,16 +1,11 @@
 // @vitest-environment jsdom
-import {
-  cleanup,
-  render,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { InventoryDashboard } from "../src/components/inventory-dashboard";
 import { LiquidDashboard } from "../src/components/liquid-dashboard";
+import { JarvisChat } from "../src/components/jarvis-chat";
 import { visualItem } from "../src/components/use-inventory-store";
 import { itemInput, type Item } from "../src/lib/inventory";
 import type { DashboardBriefing } from "../src/lib/dashboard";
@@ -112,11 +107,6 @@ it("renders truthful grouped activity and starts Jarvis prompts", async () => {
   expect(onSelectItem).toHaveBeenCalledWith(camera.id);
   await user.click(screen.getByRole("button", { name: /plan together/i }));
   expect(onAsk).toHaveBeenCalledWith(briefing.suggestion!.prompt);
-
-  const composer = screen.getByRole("form", { name: "Ask Jarvis" });
-  await user.type(within(composer).getByRole("textbox"), "Where is my lens?");
-  await user.click(within(composer).getByRole("button", { name: /send/i }));
-  expect(onAsk).toHaveBeenCalledWith("Where is my lens?");
 });
 
 it("shows distinct loading, error, and empty states", () => {
@@ -150,20 +140,41 @@ it("shows distinct loading, error, and empty states", () => {
 
 it("keeps the Jarvis composer keyboard-usable while activity is loading or unavailable", async () => {
   const user = userEvent.setup();
-  const onAsk = vi.fn();
-  const props = { items: [], onAsk, onSelectItem: vi.fn() };
+  const fetchMock = vi.fn<typeof fetch>(async () =>
+    Response.json({ mode: "ai", answer: "Your answer", citations: [] }),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  const props = {
+    items: [],
+    onAsk: vi.fn(),
+    onSelectItem: vi.fn(),
+    conversation: () => (
+      <JarvisChat
+        items={[]}
+        saved={false}
+        onSelect={() => {}}
+        onApplyChanges={async () => ({ items: [], summary: "" })}
+      />
+    ),
+  };
   const view = render(
     <InventoryDashboard briefing={null} loading {...props} />,
   );
   const prompt = screen.getByRole("textbox", { name: "Ask Jarvis" });
   await user.type(prompt, "Where is my backpack?{Enter}");
-  expect(onAsk).toHaveBeenCalledWith("Where is my backpack?");
+  expect(await screen.findByText("Your answer")).toBeVisible();
+  expect(JSON.parse(fetchMock.mock.calls[0][1]?.body as string)).toMatchObject({
+    question: "Where is my backpack?",
+  });
 
   view.rerender(
     <InventoryDashboard briefing={null} error="Offline" {...props} />,
   );
   await user.type(prompt, "Help me plan my shelves{Enter}");
-  expect(onAsk).toHaveBeenCalledWith("Help me plan my shelves");
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  expect(JSON.parse(fetchMock.mock.calls[1][1]?.body as string)).toMatchObject({
+    question: "Help me plan my shelves",
+  });
   expect(prompt).toHaveValue("");
 });
 

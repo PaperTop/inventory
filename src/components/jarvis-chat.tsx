@@ -6,11 +6,12 @@ import {
   useRef,
   useState,
   type FormEvent,
+  type ReactNode,
 } from "react";
 import Image from "next/image";
 import {
   ArrowCounterClockwise,
-  PaperPlaneTilt,
+  PaperPlaneRight,
   Sparkle,
 } from "@phosphor-icons/react";
 import { askInventory, inventoryFacts, type AskResult } from "@/lib/ask";
@@ -18,7 +19,7 @@ import { searchFacts } from "@/lib/inventory-search";
 import { askApi, askLocalApi } from "@/lib/browser-api";
 import type { VisualItem } from "./use-inventory-store";
 import type { ChangeOutcome, InventoryChange } from "@/lib/inventory-changes";
-import styles from "./liquid-dashboard.module.css";
+import styles from "./inventory-dashboard.module.css";
 
 type Exchange = { question: string; result?: AskResult; source: string };
 
@@ -28,6 +29,8 @@ export function JarvisChat({
   onSelect,
   onApplyChanges,
   promptRequest,
+  active = true,
+  children,
 }: {
   items: VisualItem[];
   saved: boolean;
@@ -36,35 +39,56 @@ export function JarvisChat({
     changes: InventoryChange[],
     versions: Record<string, number>,
   ) => Promise<ChangeOutcome>;
-  promptRequest?: { text: string; id: number; submit?: boolean };
+  promptRequest?: {
+    text: string;
+    id: number;
+    submit?: boolean;
+    focusOnly?: boolean;
+  };
+  active?: boolean;
+  children?: ReactNode;
 }) {
   const [prompt, setPrompt] = useState("");
   const [exchanges, setExchanges] = useState<Exchange[]>([]);
   const [busy, setBusy] = useState(false);
   const sending = useRef(false);
-  const lifecycle = useRef(0);
-  useEffect(
-    () => () => {
-      lifecycle.current++;
-    },
-    [],
-  );
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const handledRequest = useRef<number | undefined>(undefined);
   const transcript = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const sendRequest = useEffectEvent((text: string) => {
     void send(text);
   });
+  const focusConversation = useEffectEvent(() => {
+    input.current?.focus();
+    if (exchanges.length)
+      transcript.current?.scrollIntoView?.({ block: "end" });
+  });
   useEffect(() => {
-    if (!promptRequest) return;
-    if (promptRequest.submit) {
+    if (!promptRequest || handledRequest.current === promptRequest.id) return;
+    handledRequest.current = promptRequest.id;
+    if (promptRequest.submit && !sending.current) {
       sendRequest(promptRequest.text);
       return;
     }
     queueMicrotask(() => {
-      setPrompt(promptRequest.text);
-      input.current?.focus();
+      if (mounted.current && !promptRequest.focusOnly)
+        setPrompt(promptRequest.text);
     });
   }, [promptRequest]);
+  useEffect(() => {
+    if (!active || !promptRequest) return;
+    // Navigation and item-detail cleanup restore their old focus in microtasks.
+    // Focus the shared composer after those restorations have finished.
+    const timer = setTimeout(() => focusConversation(), 0);
+    return () => clearTimeout(timer);
+  }, [active, promptRequest]);
   const currentTarget = useRef({ saved, onApplyChanges });
 
   useEffect(() => {
@@ -72,14 +96,13 @@ export function JarvisChat({
   }, [saved, onApplyChanges]);
 
   useEffect(() => {
-    if (transcript.current)
-      transcript.current.scrollTop = transcript.current.scrollHeight;
-  }, [exchanges, busy]);
+    if (active && exchanges.length)
+      transcript.current?.scrollIntoView?.({ block: "end" });
+  }, [active, busy, exchanges]);
 
   async function send(rawQuestion: string) {
     const question = rawQuestion.trim();
     if (!question || sending.current) return;
-    const requestLifecycle = lifecycle.current;
     sending.current = true;
     setBusy(true);
     setPrompt("");
@@ -110,17 +133,30 @@ export function JarvisChat({
       result.notice =
         "Jarvis could not reach the AI service. Showing local search results; follow-up context needs AI.";
     }
-    if (requestLifecycle !== lifecycle.current) return;
+    if (!mounted.current) return;
     if (result.changes?.length) {
-      const outcome =
-        currentTarget.current.saved === saved
-          ? await currentTarget.current.onApplyChanges(result.changes, versions)
-          : {
-              items: [],
-              summary: "No items were changed.",
-              error:
-                "The inventory source changed while Jarvis was answering. Ask again using the current inventory.",
-            };
+      let outcome: ChangeOutcome;
+      try {
+        outcome =
+          currentTarget.current.saved === saved
+            ? await currentTarget.current.onApplyChanges(
+                result.changes,
+                versions,
+              )
+            : {
+                items: [],
+                summary: "No items were changed.",
+                error:
+                  "The inventory source changed while Jarvis was answering. Ask again using the current inventory.",
+              };
+      } catch {
+        outcome = {
+          items: [],
+          summary: "Jarvis could not finish saving your changes.",
+          error:
+            "Check your inventory before trying again; some changes may have been saved.",
+        };
+      }
       result = {
         ...result,
         answer: outcome.summary,
@@ -128,7 +164,7 @@ export function JarvisChat({
         notice: outcome.error,
       };
     }
-    if (requestLifecycle !== lifecycle.current) return;
+    if (!mounted.current) return;
     setExchanges((current) =>
       current.map((turn, index) =>
         index === current.length - 1 ? { ...turn, result } : turn,
@@ -136,7 +172,6 @@ export function JarvisChat({
     );
     sending.current = false;
     setBusy(false);
-    input.current?.focus();
   }
 
   async function ask(event: FormEvent) {
@@ -153,49 +188,32 @@ export function JarvisChat({
 
   return (
     <form className={styles.assistant} aria-label="Jarvis" onSubmit={ask}>
-      <div className={styles.assistantHeader}>
-        <div className={styles.assistantTitle}>
-          <span className={styles.orb}>
-            <Sparkle weight="fill" />
-          </span>
-          <div>
-            <h2>Jarvis</h2>
-            <span>Your inventory assistant</span>
+      {children}
+      {exchanges.length > 0 && (
+        <div className={styles.assistantHeader}>
+          <div className={styles.assistantTitle}>
+            <span className={styles.orb}>
+              <Sparkle weight="fill" />
+            </span>
+            <div>
+              <h2>Jarvis</h2>
+            </div>
           </div>
+          {exchanges.length > 0 && (
+            <button
+              type="button"
+              className={styles.assistantReset}
+              onClick={resetChat}
+              disabled={busy}
+              aria-label="Reset conversation"
+              title="Reset conversation"
+            >
+              <ArrowCounterClockwise size={13} weight="bold" />
+              <span>Reset</span>
+            </button>
+          )}
         </div>
-        {exchanges.length > 0 && (
-          <button
-            type="button"
-            className={styles.assistantReset}
-            onClick={resetChat}
-            disabled={busy}
-            aria-label="Reset chat"
-            title="Reset conversation"
-          >
-            <ArrowCounterClockwise size={13} weight="bold" />
-            <span>Reset</span>
-          </button>
-        )}
-      </div>
-      <div className={styles.assistantSuggestions}>
-        {[
-          "Pack me for camping",
-          "What can I use to take pictures?",
-          "Show my camera accessories",
-        ].map((question) => (
-          <button
-            key={question}
-            type="button"
-            disabled={busy}
-            onClick={() => {
-              setPrompt(question);
-              input.current?.focus();
-            }}
-          >
-            {question}
-          </button>
-        ))}
-      </div>
+      )}
       <div
         ref={transcript}
         className={styles.assistantTranscript}
@@ -204,12 +222,6 @@ export function JarvisChat({
         aria-live="polite"
         aria-busy={busy}
       >
-        {!exchanges.length && (
-          <p className={styles.assistantWelcome}>
-            Tell me what you’re planning. I’ll look through your things and help
-            you find what fits. You can also ask me to add or edit an item.
-          </p>
-        )}
         {exchanges.map((turn, index) => (
           <div className={styles.assistantExchange} key={index}>
             <p className={styles.assistantQuestion}>{turn.question}</p>
@@ -265,24 +277,29 @@ export function JarvisChat({
           </div>
         ))}
         {busy && (
-          <p className={styles.assistantNotice}>
-            Looking through your inventory…
+          <p className={styles.assistantNotice} role="status">
+            Jarvis is looking through your inventory…
           </p>
         )}
       </div>
-      <div className={styles.assistantComposer}>
-        <label>
-          <input
-            ref={input}
-            value={prompt}
-            onChange={(event) => setPrompt(event.target.value)}
-            placeholder="Ask about your things…"
-            aria-label="Ask Jarvis"
-            maxLength={1000}
-          />
-        </label>
-        <button aria-label="Send question" disabled={busy || !prompt.trim()}>
-          <PaperPlaneTilt weight="fill" />
+      <div className={styles.composer}>
+        <label htmlFor="dashboard-jarvis-prompt">Ask Jarvis</label>
+        <input
+          id="dashboard-jarvis-prompt"
+          ref={input}
+          value={prompt}
+          onChange={(event) => setPrompt(event.target.value)}
+          placeholder="Ask Jarvis…"
+          autoComplete="off"
+          aria-label="Ask Jarvis"
+          maxLength={1000}
+        />
+        <button
+          type="submit"
+          aria-label="Send to Jarvis"
+          disabled={busy || !prompt.trim()}
+        >
+          <PaperPlaneRight weight="bold" />
         </button>
       </div>
     </form>

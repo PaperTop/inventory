@@ -1,5 +1,12 @@
 # Verification record
 
+## Inline Jarvis and container controls — 2026-10-13
+
+- Platform ran `npm run release:check` on the combined completed changes: formatting, ESLint, TypeScript, 234 tests passed (4 opt-in tests skipped), and the Next.js production build passed. `git diff --check` also passed.
+- The release includes Dashboard-only inline Jarvis, preserved conversation and draft state, subdued composer keyboard focus, visible root/nested container creation controls and validation, and sidebar container selection by stable item ID.
+- Frontend and QA accepted the component and workflow regressions; Designer accepted desktop/mobile inline conversation layout. Detailed browser evidence is in `design-qa.md`.
+- This release adds no backend migration. Platform did not run live-service smoke tests, apply a live migration, or manually deploy the application.
+
 ## Account flow — 2026-09-16
 
 - ESLint, TypeScript, 184 automated tests, production build, and formatting checks passed. Four opt-in live-model tests were skipped.

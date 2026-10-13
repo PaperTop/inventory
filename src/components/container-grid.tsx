@@ -21,7 +21,6 @@ export function ContainerGrid({
   queryActive,
   onSelect,
   onAddItem,
-  onAddContainer,
 }: {
   items: VisualItem[];
   visible: Item[];
@@ -34,7 +33,6 @@ export function ContainerGrid({
   queryActive: boolean;
   onSelect: (item: Item) => void;
   onAddItem: (parent?: string) => void;
-  onAddContainer: (parent?: string) => void;
 }) {
   const current = items.find(
     (item) => item.id === opened && item.kind === "container",
@@ -187,10 +185,6 @@ export function ContainerGrid({
         {current && (
           <footer className={css.panelFooter}>
             <span>{rows.length} items</span>
-            <button onClick={() => onAddContainer(current.id)}>
-              <Folder />
-              Add container
-            </button>
           </footer>
         )}
       </section>

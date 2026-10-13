@@ -185,6 +185,134 @@ button.activityRow:hover {
   box-shadow: 0 12px 32px #03111cb8;
   z-index: 3;
 }
+.assistant {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 20px;
+}
+.assistantHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 26px;
+  border-top: 1px solid #23506d;
+}
+.assistantTitle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.assistantTitle h2 {
+  font-size: 20px;
+  color: #f4f8fc;
+}
+.orb {
+  display: grid;
+  place-items: center;
+  color: #43e0ef;
+}
+.orb svg {
+  width: 24px;
+  height: 24px;
+}
+.assistantReset {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  background: transparent;
+  color: #9ebbd3;
+  font-size: 12px;
+}
+.assistantTranscript:empty {
+  display: none;
+}
+.assistantTranscript {
+  scroll-margin-bottom: 100px;
+  display: grid;
+  gap: 24px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.assistantExchange {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+.assistantQuestion {
+  align-self: flex-end;
+  max-width: 90%;
+  padding: 12px 18px;
+  background: #164069;
+  color: #e2effc;
+  border-radius: 14px 14px 4px 14px;
+  font-size: 15px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+.assistantSource {
+  font-size: 12px;
+  color: #82a2bb;
+}
+.assistantAnswer {
+  white-space: pre-wrap;
+  color: #c4dced;
+  font-size: 16px;
+  line-height: 1.8;
+  width: 100%;
+}
+.assistantResults {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: 100%;
+  gap: 10px;
+}
+.assistantResults button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px;
+  border-radius: 7px;
+  border: 1px solid #294861 !important;
+  color: #bad6ed;
+  background: #102c41;
+  text-align: left;
+}
+.assistantResults button:hover:not(:disabled) {
+  border-color: #4bdff1 !important;
+  background: #14364d;
+}
+.assistantResults button:disabled {
+  opacity: 0.6;
+}
+.assistantResults img {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+}
+.assistantResults button > span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  font-size: 12px;
+}
+.assistantResults strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+.assistantResults button > span > span {
+  color: #93b2cc;
+}
+.assistantNotice {
+  font-size: 14px;
+  line-height: 1.7;
+  color: #9dbad1;
+}
 .composer label {
   position: absolute;
   width: 1px;
@@ -207,6 +335,12 @@ button.activityRow:hover {
 }
 .composer input::placeholder {
   color: #91b8e8;
+}
+.composer input[id]:focus {
+  outline: none;
+}
+.composer input[id]:focus-visible {
+  box-shadow: inset 0 -1px 0 #95aec5;
 }
 .composer button {
   width: 54px;
@@ -372,6 +506,12 @@ button.activityRow:hover {
     min-height: 58px;
     padding: 6px 7px 6px 15px;
     border-radius: 10px;
+  }
+  .assistantResults {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .assistantAnswer {
+    font-size: 15px;
   }
   .composer input {
     font-size: 16px;

@@ -119,6 +119,7 @@
 }
 .primaryNav > .activeNav,
 .spaceNav > .activeNav,
+.containerBranch > .activeNav,
 .spaceBranchRow:has(> button[aria-pressed="true"]) {
   background: #1a3c63;
   color: #f3f8ff;
@@ -380,6 +381,12 @@
   width: 16px;
   height: 16px;
 }
+.creationActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
 .filterButton {
   display: grid;
   place-items: center;
@@ -486,8 +493,7 @@
   border: 1px solid #203c51;
   border-radius: 7px;
 }
-.extraFilters > button,
-.addContainer {
+.extraFilters > button {
   display: flex;
   align-items: center;
   gap: 7px;
@@ -496,6 +502,23 @@
   border-radius: 5px;
   color: #bfd9ee;
   font-size: 12px;
+}
+.addContainer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 38px;
+  padding: 9px 14px;
+  border: 1px solid #355873 !important;
+  border-radius: 7px;
+  background: #19384f;
+  color: #d9eafa;
+  font-size: 12px !important;
+  white-space: nowrap;
+}
+.addContainer:hover {
+  background: #254b66;
 }
 .addContainer svg {
   width: 16px;
@@ -786,8 +809,7 @@
   width: 15px;
   height: 15px;
 }
-.closeDetails,
-.closeChat {
+.closeDetails {
   position: absolute;
   z-index: 2;
   right: 22px;
@@ -801,8 +823,7 @@
   font-size: 24px !important;
   border-radius: 5px;
 }
-.closeDetails:hover,
-.closeChat:hover {
+.closeDetails:hover {
   background: #274258;
 }
 .photoOverlay {
@@ -1135,229 +1156,6 @@
   padding: 70px 20px;
   text-align: center;
   color: var(--muted);
-}
-.chatPanel {
-  position: fixed;
-  inset: 14px 14px 14px auto;
-  z-index: 50;
-  width: min(510px, calc(100vw - 40px));
-  border: 1px solid #2d4a65;
-  border-radius: 10px;
-  background: #0e2337;
-  box-shadow: -20px 0 70px #0006;
-  animation: slideIn 180ms ease-out;
-}
-.chatPanel[hidden] {
-  display: none;
-}
-.closeChat {
-  top: 16px;
-  right: 17px;
-}
-.closeChat svg {
-  width: 18px;
-  height: 18px;
-}
-.assistant {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  padding: 23px;
-}
-.assistantHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 30px;
-  padding-right: 36px;
-}
-.assistantTitle {
-  display: flex;
-  align-items: center;
-  gap: 13px;
-}
-.orb {
-  width: 36px;
-  height: 36px;
-  display: grid;
-  place-items: center;
-  background: #146ddd;
-  color: #e1f2ff;
-  border: 1px solid #51b4ff;
-  border-radius: 50%;
-  box-shadow:
-    0 0 18px #1583f855,
-    inset 0 1px 5px #96d3ff55;
-}
-.orb svg {
-  width: 21px;
-  height: 21px;
-}
-.assistantTitle h2 {
-  font-size: 16px;
-  font-weight: 600;
-}
-.assistantTitle > div > span {
-  font-size: 10px;
-  color: #a7c4dc;
-}
-.assistantReset {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 5px;
-  background: none;
-  color: #9ebbd3;
-  font-size: 10px !important;
-}
-.assistantSuggestions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-  margin-bottom: 20px;
-}
-.assistantSuggestions button {
-  border: 1px solid #26475f !important;
-  border-radius: 6px;
-  background: #132d44;
-  padding: 7px 9px;
-  text-align: left;
-  color: #a9c9e3;
-  font-size: 11px;
-}
-.assistantSuggestions button:hover {
-  background: #234666;
-}
-.assistantTranscript {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 0 2px 18px;
-  scrollbar-width: thin;
-  scrollbar-color: #2c4a64 transparent;
-}
-.assistantWelcome {
-  padding: 17px;
-  border: 1px solid #1b3950;
-  border-radius: 9px;
-  color: #b1cde4;
-  background: #122c42;
-  font-size: 12px;
-  line-height: 1.8;
-}
-.assistantExchange {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 10px;
-  margin-bottom: 20px;
-}
-.assistantQuestion {
-  align-self: flex-end;
-  max-width: 90%;
-  padding: 10px 15px;
-  background: #1c4a80;
-  border-radius: 15px 15px 4px 15px;
-  font-size: 12px;
-  line-height: 1.7;
-}
-.assistantSource {
-  font-size: 9px;
-  color: #82a2bb;
-  margin-top: 4px;
-}
-.assistantAnswer {
-  white-space: pre-wrap;
-  padding: 14px 16px;
-  border-radius: 4px 13px 13px 13px;
-  background: #17334b;
-  color: #c4dced;
-  font-size: 12px;
-  line-height: 1.85;
-  width: 100%;
-}
-.assistantResults {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  width: 100%;
-  gap: 7px;
-}
-.assistantResults button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  padding: 8px;
-  border-radius: 6px;
-  border: 1px solid #294861 !important;
-  color: #bad6ed;
-  background: #132c41;
-  text-align: left;
-}
-.assistantResults img {
-  width: 38px;
-  height: 38px;
-  object-fit: contain;
-}
-.assistantResults button > span {
-  min-width: 0;
-  display: grid;
-  gap: 2px;
-  font-size: 9px;
-}
-.assistantResults strong {
-  font-size: 11px;
-  font-weight: 500;
-}
-.assistantResults button > span > span {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: #93b2cc;
-}
-.assistantNotice {
-  font-size: 10px;
-  line-height: 1.7;
-  color: #9dbad1;
-}
-.assistantComposer {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border: 1px solid #355d7f;
-  border-radius: 24px;
-  background: #102c45;
-  padding: 8px 9px 8px 16px;
-}
-.assistantComposer label {
-  flex: 1;
-  min-width: 0;
-}
-.assistantComposer input {
-  width: 100%;
-  border: 0;
-  color: #dcedfb;
-  background: none;
-  font-size: 11px;
-  outline: 0;
-  padding: 5px 0;
-}
-.assistantComposer input::placeholder {
-  color: #8daeca;
-}
-.assistantComposer button {
-  width: 30px;
-  height: 30px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  color: #b9dafa;
-  background: #255784;
-}
-.assistantComposer button svg {
-  width: 15px;
-  height: 15px;
 }
 .placeOverlay {
   position: fixed;
@@ -1770,6 +1568,17 @@
   }
   .toolbar {
     margin-bottom: 22px;
+    flex-wrap: wrap;
+  }
+  .toolbar .search {
+    flex-basis: calc(100% - 50px);
+  }
+  .creationActions {
+    order: 3;
+    flex: 1;
+  }
+  .filterButton {
+    order: 4;
   }
   .search {
     min-height: 36px;
@@ -1817,9 +1626,6 @@
   }
   .toolbar {
     gap: 7px;
-  }
-  .toolbar .addItem span {
-    display: none;
   }
   .toolbar .addItem {
     height: 36px;
@@ -1941,16 +1747,6 @@
   }
   .photoOverlayText {
     font-size: 9px;
-  }
-  .chatPanel {
-    inset: 8px;
-    width: auto;
-  }
-  .assistant {
-    padding: 20px;
-  }
-  .assistantResults {
-    grid-template-columns: 1fr;
   }
   .choiceGrid {
     gap: 4px;
