@@ -1,4 +1,10 @@
 import { z } from "zod";
+import {
+  failureReason,
+  JarvisFailure,
+  reportDiagnostic,
+  type JarvisDiagnostic,
+} from "./jarvis-diagnostics";
 import { conditions, statuses, type Item, type Location } from "./inventory";
 import {
   explicitScopeQuestion,
@@ -25,6 +31,7 @@ import {
   type InventoryChange,
 } from "./inventory-changes";
 export interface InventoryReader {
+  diagnose?(event: JarvisDiagnostic): void;
   snapshot?(): Promise<{ items: Item[]; locations: Location[] }>;
   search(
     query: string,
@@ -341,6 +348,7 @@ export async function askInventory(
           mode: "search",
         }
       : fallback;
+  const answerStarted = performance.now();
   try {
     const evidence = new Map(items.map((item) => [item.id, item]));
     const changes: InventoryChange[] = [];
@@ -354,7 +362,7 @@ export async function askInventory(
       ).then(inventoryFacts));
     const checkRead = (offset: number) => {
       // One automatic overview plus at most twelve tool calls.
-      if (++searches > 13) throw new Error("Inventory search limit reached.");
+      if (++searches > 13) throw new JarvisFailure("tool_budget");
       z.number().int().min(0).max(1_000_000).parse(offset);
     };
     const searchPage = async (query: string, offset = 0) => {
@@ -368,6 +376,7 @@ export async function askInventory(
       return structuredClone(page);
     };
     const safeReader: InventoryReader = {
+      diagnose: reader.diagnose,
       search: async (query) => (await searchPage(query)).items,
       searchPage,
       overview: async (offset = 0) => {
@@ -387,26 +396,70 @@ export async function askInventory(
           }
         : {}),
     };
-    const result = answerOutput.parse(
-      await provider.answer(
-        {
-          question,
-          items: structuredClone(items),
-          ...(history?.length ? { history } : {}),
-        },
-        safeReader,
-      ),
+    const rawResult = await provider.answer(
+      {
+        question,
+        items: structuredClone(items),
+        ...(history?.length ? { history } : {}),
+      },
+      safeReader,
     );
+    const parsed = answerOutput.safeParse(rawResult);
+    if (!parsed.success) throw new JarvisFailure("answer_schema");
+    const result = parsed.data;
     const ids = [...new Set(result.itemIds)];
     if (ids.some((id) => !evidence.has(id)))
-      throw new Error("Unknown citation");
+      throw new JarvisFailure("citation");
+    // Separate deterministic record evidence from the model's suggestions.
+    // Only a bounded set of already-retrieved, available daily necessities is
+    // eligible, never every owned record or an inferred medical need.
+    const essentials =
+      packing && !editing
+        ? items
+            .filter(
+              (item) =>
+                !ids.includes(item.id) &&
+                item.quantity > 0 &&
+                ["active", "stored"].includes(item.status) &&
+                /\b(personal care|health|first aid|vision|hygiene)\b/i.test(
+                  item.category,
+                ) &&
+                /\b(contact lenses?|glasses|night guard|medication|medicine|inhaler)\b/i.test(
+                  item.name,
+                ),
+            )
+            .slice(0, Math.min(4, 20 - ids.length))
+        : [];
+    const check = essentials.length
+      ? "\n\nRecorded personal essentials to review (confirm trip suitability; not automatically packed):\n" +
+        essentials
+          .map(
+            (item) =>
+              `${item.name} — ${item.location_path?.slice(0, -1).join(" → ") || item.location_name || "no location set"}; ${item.quantity} ${item.unit}; ${item.status}${item.condition === "poor" ? "; poor condition" : ""}.`,
+          )
+          .join("\n")
+      : "";
+    // Never truncate the model's answer or exceed the validated answer budget.
+    const includedEssentials =
+      result.answer.length + check.length <= 4000 ? essentials : [];
+    reportDiagnostic(reader.diagnose, {
+      stage: "answer",
+      outcome: "success",
+      elapsedMs: performance.now() - answerStarted,
+    });
     return {
-      answer: result.answer,
-      citations: ids.map((id) => evidence.get(id)!),
+      answer: result.answer + (includedEssentials.length ? check : ""),
+      citations: [...ids.map((id) => evidence.get(id)!), ...includedEssentials],
       mode: "ai",
       ...(changes.length ? { changes } : {}),
     };
-  } catch {
+  } catch (error) {
+    reportDiagnostic(reader.diagnose, {
+      stage: "answer",
+      outcome: "failure",
+      reason: failureReason(error),
+      elapsedMs: performance.now() - answerStarted,
+    });
     return {
       ...fallback,
       notice:

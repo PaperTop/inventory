@@ -45,7 +45,13 @@ const createLangChainModel: ModelFactory = (configuration) => {
       maxRetries: configuration.maxRetries,
       maxOutputTokens: configuration.maxTokens,
     }).bindTools(inventoryToolDefinitions);
-    return { invoke: (messages, options) => model.invoke(messages, options) };
+    return {
+      invoke: (messages, options) =>
+        model.invoke(messages, {
+          signal: options?.signal,
+          ...(options?.finalAnswer ? { tool_choice: "none" } : {}),
+        }),
+    };
   }
   if (configuration.provider === "openai-compatible") {
     const model = new ChatOpenAI({
@@ -59,7 +65,10 @@ const createLangChainModel: ModelFactory = (configuration) => {
     });
     return {
       invoke: (messages, options) =>
-        model.bindTools(inventoryToolDefinitions).invoke(messages, options),
+        model.bindTools(inventoryToolDefinitions).invoke(messages, {
+          signal: options?.signal,
+          ...(options?.finalAnswer ? { tool_choice: "none" } : {}),
+        }),
     };
   }
 
@@ -73,7 +82,10 @@ const createLangChainModel: ModelFactory = (configuration) => {
   });
   return {
     invoke: (messages, options) =>
-      model.bindTools(inventoryToolDefinitions).invoke(messages, options),
+      model.bindTools(inventoryToolDefinitions).invoke(messages, {
+        signal: options?.signal,
+        ...(options?.finalAnswer ? { tool_choice: "none" } : {}),
+      }),
   };
 };
 

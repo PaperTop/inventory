@@ -25,6 +25,50 @@ const context = {
 };
 
 describe("read-only LangGraph answer workflow", () => {
+  it("reserves the fourth turn for a grounded final answer instead of offering an unusable search", async () => {
+    let calls = 0;
+    let searches = 0;
+    const provider = createReadOnlyAnswerGraph({
+      async invoke(
+        messages,
+        options?: { signal: AbortSignal; finalAnswer?: boolean },
+      ) {
+        calls++;
+        if (options?.finalAnswer) {
+          expect(calls).toBe(4);
+          expect(String(messages[0].content)).toMatch(/final answer/i);
+          return new AIMessage(
+            JSON.stringify({
+              answer:
+                "Your charger is in Backpack. Other supplies were not found in the records searched.",
+              itemIds: ["item-1"],
+            }),
+          );
+        }
+        return new AIMessage({
+          content: "",
+          tool_calls: [
+            {
+              id: `search-${calls}`,
+              name: "search_inventory",
+              args: { query: "charger" },
+            },
+          ],
+        });
+      },
+    });
+    await expect(
+      provider.answer(context, {
+        search: async () => {
+          searches++;
+          return context.items;
+        },
+      }),
+    ).resolves.toMatchObject({ itemIds: ["item-1"] });
+    expect(calls).toBe(4);
+    expect(searches).toBe(3);
+  });
+
   it("still stops repeated invalid search requests at the existing four-turn limit", async () => {
     let calls = 0;
     let searches = 0;

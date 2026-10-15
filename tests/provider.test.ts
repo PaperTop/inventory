@@ -74,7 +74,7 @@ it("does not retry a failed model invocation", async () => {
   const provider = configuredProvider(factory);
   await expect(
     provider!.answer({ question: "jacket", items: [] }),
-  ).rejects.toThrow("provider unavailable");
+  ).rejects.toMatchObject({ reason: "provider_error" });
   expect(calls).toBe(1);
 });
 

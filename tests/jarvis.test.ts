@@ -36,6 +36,57 @@ const reader = {
 };
 
 describe("Jarvis inventory retrieval", () => {
+  it("grounds a separate personal-essentials inventory check when synthetic packing prose omits its cards", async () => {
+    const fixture = [
+      ...Array.from({ length: 260 }, (_, n) =>
+        item(`decor-${n}`, `Desk ornament ${n}`, { category: "Decor" }),
+      ),
+      ...rows,
+      item("guard", "Night guard", { category: "Personal care" }),
+      item("empty", "Contact lens solution", {
+        category: "Personal care",
+        kind: "consumable",
+        quantity: 0,
+      }),
+      item("lent", "Glasses", { category: "Personal care", status: "lent" }),
+    ];
+    // Reconstructed response reproducing the observed omission, not a retained
+    // verbatim provider answer. The original live output was not logged.
+    const provider = {
+      answer: async () => ({
+        answer:
+          "Take your backpack. Check contact lenses and night guard for the trip; shelter was not found in the records searched.",
+        itemIds: ["bag"],
+      }),
+    };
+    const result = await askInventory(
+      "Pack me for camping",
+      { search: async (q) => searchInventory(fixture, q) },
+      provider,
+    );
+    expect(result.mode).toBe("ai");
+    expect(result.citations.map((row) => row.id)).toEqual(
+      expect.arrayContaining(["bag", "contacts", "guard"]),
+    );
+    expect(result.citations.map((row) => row.id)).not.toEqual(
+      expect.arrayContaining(["empty", "lent"]),
+    );
+    expect(result.answer).toMatch(/Recorded personal essentials to review/);
+    expect(result.answer).toMatch(/not automatically packed/);
+    const excluded = await askInventory(
+      "Remove the Night guard",
+      { search: async (q) => searchInventory(fixture, q) },
+      {
+        answer: async () => ({
+          answer: "Keep your backpack and review personal essentials.",
+          itemIds: ["bag"],
+        }),
+      },
+      [{ question: "Pack me for camping", answer: result.answer }],
+    );
+    expect(excluded.citations.map((row) => row.id)).not.toContain("guard");
+  });
+
   it("keeps packing revisions grounded when the provider is unavailable", async () => {
     const history = [
       { question: "Pack me for camping", answer: "Suggested starting list." },

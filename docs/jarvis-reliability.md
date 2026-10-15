@@ -1,0 +1,42 @@
+# Jarvis reliability investigation — 2026-10-15
+
+## Confirmed cause and scoped change
+
+The measured synthetic baseline reproduced `tool_budget`: the model requested another search on its fourth and final invocation. All four provider responses finished normally; this observed failure was not a timeout. The application had offered tools on a turn when it would reject any resulting tool call. The earlier 21.49-second fallback did not capture a reason and cannot retrospectively be classified.
+
+Jarvis now tells the model how many tool rounds remain and reserves invocation four for a final answer. Provider adapters set `tool_choice: none` on that invocation only; earlier turns retain normal tool access. The existing rejection of an actual fourth-turn tool request remains, including for a noncompliant provider. A deterministic replay failed with `tool_budget` before the change and passes afterward with exactly four model invocations and three searches. Independent tests still reject foreign citations on the last turn and allow a limited, grounded answer that explicitly acknowledges gaps.
+
+The existing four-invocation limit, up to four tool calls per permitted round, 13-read ceiling including the initial overview, 25-second graph deadline, zero provider retries, answer schema, citation-evidence check and prepared-change validation remain. There is no model replacement, increased deadline, retry-until-success, invented ownership or fallback relabeling. Exact location questions still use deterministic scoped pagination without model inference.
+
+The installed provider adapters accept per-invocation tool choice; the supporting primary references are [ChatGoogle bindTools](https://reference.langchain.com/javascript/langchain-google/index/ChatGoogle/bindTools) and [tool choice modes](https://reference.langchain.com/javascript/langchain-google-common/types/GoogleAIModelRequestParams/tool_choice). The implementation was also checked against the installed package types/converter code rather than assuming a different adapter version.
+
+## Sanitized internal diagnostics
+
+`InventoryReader.diagnose` is an optional internal observation callback, not an HTTP response field or automatic raw log. Events contain only stage (`model`, `tool`, `answer`), outcome, fixed failure reason, duration, model-turn/tool-call counts, and a normalized finish category. No prompts, histories, inventory contents, provider bodies/messages/stacks, URLs, keys or credentials are included. A throwing observer is ignored so instrumentation cannot repeat an action or change an answer.
+
+Fixed reasons distinguish provider errors, rate limits, deadline/cancellation, tool budget/argument/availability/reader failures, output limits, answer JSON/schema and ungrounded citations. Signal/error identity is used for deadline/cancellation; elapsed time alone is not evidence of a timeout. The visible fallback remains truthful and does not return prepared changes after a failed answer.
+
+## Bounded measurement
+
+All provider inputs in this investigation are fabricated fixtures. No database, saved account or real private inventory is involved. Requests are serialized and never automatically retried.
+
+| Batch                                             | Calls | Outcome                                                                                                             | Latency                                                          |
+| ------------------------------------------------- | ----: | ------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| Initial instrumentation batches                   |     6 | Outcomes unobserved because the runner suppressed passing-test console output; these calls still count in the total | Per-attempt values unavailable; not used as reliability evidence |
+| Measured baseline, original short camping fixture |     3 | 2 AI answers, 1 truthful search fallback (`tool_budget`); all citations from the fixture                            | 3094 ms fallback; 3152 / 3335 ms AI                              |
+
+The sanitized baseline artifact is `/private/tmp/inventory-jarvis-reliability-measurement.json`. `tests/jarvis-reliability-live.test.ts` is opt-in through `JARVIS_RELIABILITY_SAMPLE` and executes exactly three attempts, preserving each completed measurement locally. Use `--disableConsoleIntercept --reporter=verbose` to expose its console output as well. A passing measurement harness means its fixed sample ran and citations stayed within the fixture, not that every attempt produced an AI answer. Do not confuse that with behavioral acceptance.
+
+Independent QA owns the post-change fixed five-request matrix: two short camping prompts, one work-packing prompt, one camping prompt with relevant essentials beyond 260 irrelevant records, and its exclusion follow-up. See `design-qa.md` for its actual per-attempt outcomes and final release gate. No further baseline calls are planned. A small sample does not establish a production success rate or eliminate provider failures; truthful bounded fallback remains required.
+
+Recovered QA results: all five completed with AI answers and no fallback at 2759, 3833, 1979, 2827 and 1954 ms respectively. The second short prompt corrected invalid tool arguments and answered on its reserved fourth turn. However, the late-inventory camping case failed the required personal-essential citation checks: contact lenses and night guard were mentioned in the answer but absent from its cited cards. The other four cases passed their quality checks, including the follow-up's exclusion. The actual live matrix exited 1; AI completion success is not complete packing-quality acceptance. All five calls completed before the interruption and none were rerun. Total actual requests in this investigation: 14 (six unobserved instrumentation attempts, three measured baseline attempts, five QA attempts). Do not pool different source versions into a success-rate claim.
+
+## Local-only grounding follow-up
+
+After the exhausted live sample, a reconstructed synthetic answer reproduces the missing citation pattern; it is not claimed to be the original provider prose, which was never logged. The new regression first failed with only the backpack card. Packing answers now supplement validated model suggestions with a clearly separate, bounded record check when relevant daily essentials lack cards. Eligibility requires both a personal-care/health/first-aid/vision/hygiene category and a name identifying contact lenses, glasses, night guard, medication/medicine or inhaler; it is not a medical inference or an automatic packing recommendation. Only already-retrieved, available records survive, including explicit follow-up exclusions. No additional search or model request is made.
+
+At most four missing cards are added, within the existing 20-card limit. The independent section names the records and their paths, quantities, status and poor-condition warning, and asks the user to confirm trip suitability; it explicitly says they are not automatically packed. It never converts a generic suggested purchase into an owned record, appends arbitrary possessions, changes editing answers, truncates the model answer or exceeds 4000 characters. If the section cannot fit, it is omitted rather than violating the answer budget. This conservative name/category vocabulary is deliberately limited and is not an exhaustive personal-needs model.
+
+This last grounding patch is verified through local reconstructed replay and negative guards only. It has **not** been sent through another live provider batch; the recorded five-case live results describe the earlier final-turn fix, not this new patch. No additional provider requests are authorized or planned in this run.
+
+Hosted verification remains explicitly deferred. No live database changes, migration, deployment, commit or push are part of this investigation.

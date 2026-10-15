@@ -7,6 +7,11 @@ import {
 } from "@langchain/core/messages";
 import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
 import { z } from "zod";
+import {
+  failureReason,
+  JarvisFailure,
+  reportDiagnostic,
+} from "./jarvis-diagnostics";
 import { answerOutput, type AnswerProvider, type InventoryReader } from "./ask";
 import { searchFacts } from "./inventory-search";
 import { createItemArguments, updateItemArguments } from "./inventory-changes";
@@ -81,7 +86,7 @@ const AnswerState = Annotation.Root({
 export interface ReadOnlyChatModel {
   invoke(
     messages: BaseMessage[],
-    options?: { signal: AbortSignal },
+    options?: { signal: AbortSignal; finalAnswer?: boolean },
   ): Promise<AIMessage>;
 }
 
@@ -102,21 +107,65 @@ export function createReadOnlyAnswerGraph(
 ): AnswerProvider {
   const graph = new StateGraph(AnswerState)
     .addNode("generate_answer", async (state) => {
-      if (state.calls >= 4)
-        throw new Error("Jarvis reached its tool loop limit.");
-      const response = await model.invoke(state.messages, {
-        signal: state.signal,
+      if (state.calls >= 4) throw new JarvisFailure("tool_budget");
+      const started = performance.now();
+      let response: AIMessage;
+      try {
+        const finalAnswer = state.calls === 3;
+        const messages = [
+          new SystemMessage(
+            String(state.messages[0].content) +
+              "\n" +
+              (finalAnswer
+                ? "This is your final answer turn. Tools are unavailable. Return the required answer JSON now using only retrieved current records. State limitations or ask a clarifying question if evidence is insufficient; never invent possessions or IDs. Do not claim prepared changes have been saved."
+                : `You have ${3 - state.calls} tool rounds remaining before the final answer. Prefer a few complementary short searches in parallel; stop once evidence is sufficient. Empty searches do not justify inventing missing possessions.`),
+          ),
+          ...state.messages.slice(1),
+        ];
+        response = await model.invoke(messages, {
+          signal: state.signal,
+          finalAnswer,
+        });
+      } catch (error) {
+        const reason = state.signal.aborted
+          ? failureReason(state.signal.reason)
+          : failureReason(error);
+        reportDiagnostic(state.reader.diagnose, {
+          stage: "model",
+          outcome: "failure",
+          reason,
+          elapsedMs: performance.now() - started,
+          turn: state.calls + 1,
+        });
+        throw new JarvisFailure(reason);
+      }
+      const finish = response.response_metadata?.finish_reason;
+      const normalizedFinish =
+        finish === "MAX_TOKENS" || finish === "length"
+          ? "length"
+          : finish === "STOP" || finish === "stop"
+            ? "stop"
+            : "other";
+      reportDiagnostic(state.reader.diagnose, {
+        stage: "model",
+        outcome: "success",
+        elapsedMs: performance.now() - started,
+        turn: state.calls + 1,
+        toolCalls: response.tool_calls?.length ?? 0,
+        finish: normalizedFinish,
       });
+      if (normalizedFinish === "length")
+        throw new JarvisFailure("output_limit");
       if (response.tool_calls?.length) {
         if (state.calls >= 3 || response.tool_calls.length > 4)
-          throw new Error("Jarvis reached its tool loop limit.");
+          throw new JarvisFailure("tool_budget");
         return {
           messages: [...state.messages, response],
           calls: state.calls + 1,
         };
       }
       if (typeof response.content !== "string")
-        throw new Error("The model must return plain text JSON.");
+        throw new JarvisFailure("answer_schema");
       let jsonString = response.content.trim();
       const codeBlockMatch = jsonString.match(
         /```(?:json)?\s*\n?([\s\S]*?)\n?```/i,
@@ -129,63 +178,101 @@ export function createReadOnlyAnswerGraph(
           jsonString = objectMatch[0].trim();
         }
       }
+      let raw: unknown;
+      try {
+        raw = JSON.parse(jsonString);
+      } catch {
+        throw new JarvisFailure("answer_json");
+      }
+      const parsed = answerOutput.safeParse(raw);
+      if (!parsed.success) throw new JarvisFailure("answer_schema");
       return {
-        result: answerOutput.parse(JSON.parse(jsonString)),
+        result: parsed.data,
         messages: [...state.messages, response],
         calls: state.calls + 1,
       };
     })
     .addNode("search_inventory", async (state) => {
-      const response = state.messages.at(-1) as AIMessage;
-      const results: ToolMessage[] = [];
-      for (const call of response.tool_calls ?? []) {
-        if (!call.id) throw new Error("Missing tool call ID.");
-        let result: unknown;
-        if (call.name === "browse_inventory") {
-          const { offset = 0 } = browseInput.parse(call.args);
-          if (!state.reader.overview)
-            throw new Error("Inventory overview unavailable.");
-          result = await state.reader.overview(offset);
-        } else if (call.name === "search_inventory") {
-          const parsed = searchInput.safeParse(call.args);
-          if (!parsed.success) {
+      const started = performance.now();
+      try {
+        const response = state.messages.at(-1) as AIMessage;
+        const results: ToolMessage[] = [];
+        for (const call of response.tool_calls ?? []) {
+          if (!call.id) throw new JarvisFailure("tool_arguments");
+          let result: unknown;
+          if (call.name === "browse_inventory") {
+            const parsed = browseInput.safeParse(call.args);
+            if (!parsed.success) throw new JarvisFailure("tool_arguments");
+            const { offset = 0 } = parsed.data;
+            if (!state.reader.overview)
+              throw new JarvisFailure("tool_unavailable");
+            result = await state.reader.overview(offset);
+          } else if (call.name === "search_inventory") {
+            const parsed = searchInput.safeParse(call.args);
+            if (!parsed.success) {
+              reportDiagnostic(state.reader.diagnose, {
+                stage: "tool",
+                outcome: "failure",
+                reason: "tool_arguments",
+                elapsedMs: 0,
+                turn: state.calls,
+              });
+              result = {
+                error: "Invalid search arguments. No search was run.",
+                instruction:
+                  "Use a query of at most 200 characters with short keywords (up to 16 terms), and an optional integer offset from 0 to 1000000. Split complementary categories into separate short searches within the remaining turn budget.",
+              };
+            } else {
+              const { query, offset = 0 } = parsed.data;
+              result = state.reader.searchPage
+                ? await state.reader.searchPage(query, offset)
+                : inventoryPage(await state.reader.search(query), offset);
+            }
+          } else if (
+            call.name === "create_item" &&
+            state.reader.prepareChange
+          ) {
+            const args = createItemArguments.parse(call.args);
+            state.reader.prepareChange({ type: "create", ...args });
             result = {
-              error: "Invalid search arguments. No search was run.",
+              status: "prepared",
+              name: args.item.name,
               instruction:
-                "Use a query of at most 200 characters with short keywords (up to 16 terms), and an optional integer offset from 0 to 1000000. Split complementary categories into separate short searches within the remaining turn budget.",
+                "The app will save this after validation. Do not invent or cite a new item ID.",
             };
-          } else {
-            const { query, offset = 0 } = parsed.data;
-            result = state.reader.searchPage
-              ? await state.reader.searchPage(query, offset)
-              : inventoryPage(await state.reader.search(query), offset);
-          }
-        } else if (call.name === "create_item" && state.reader.prepareChange) {
-          const args = createItemArguments.parse(call.args);
-          state.reader.prepareChange({ type: "create", ...args });
-          result = {
-            status: "prepared",
-            name: args.item.name,
-            instruction:
-              "The app will save this after validation. Do not invent or cite a new item ID.",
-          };
-        } else if (call.name === "update_item" && state.reader.prepareChange) {
-          const args = updateItemArguments.parse(call.args);
-          state.reader.prepareChange({ type: "update", ...args });
-          result = { status: "prepared", id: args.id };
-        } else
-          throw new Error(
-            "This inventory tool is not available for this request.",
+          } else if (
+            call.name === "update_item" &&
+            state.reader.prepareChange
+          ) {
+            const args = updateItemArguments.parse(call.args);
+            state.reader.prepareChange({ type: "update", ...args });
+            result = { status: "prepared", id: args.id };
+          } else throw new JarvisFailure("tool_unavailable");
+          results.push(
+            new ToolMessage({
+              tool_call_id: call.id,
+              name: call.name,
+              content: JSON.stringify(result),
+            }),
           );
-        results.push(
-          new ToolMessage({
-            tool_call_id: call.id,
-            name: call.name,
-            content: JSON.stringify(result),
-          }),
-        );
+        }
+        return { messages: [...state.messages, ...results] };
+      } catch (error) {
+        const reason =
+          error instanceof JarvisFailure
+            ? error.reason
+            : error instanceof z.ZodError
+              ? "tool_arguments"
+              : "tool_error";
+        reportDiagnostic(state.reader.diagnose, {
+          stage: "tool",
+          outcome: "failure",
+          reason,
+          elapsedMs: performance.now() - started,
+          turn: state.calls,
+        });
+        throw new JarvisFailure(reason);
       }
-      return { messages: [...state.messages, ...results] };
     })
     .addEdge(START, "generate_answer")
     .addConditionalEdges("generate_answer", (state) =>
