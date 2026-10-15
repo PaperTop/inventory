@@ -36,6 +36,40 @@ const reader = {
 };
 
 describe("Jarvis inventory retrieval", () => {
+  it("keeps packing revisions grounded when the provider is unavailable", async () => {
+    const history = [
+      { question: "Pack me for camping", answer: "Suggested starting list." },
+    ];
+    const removed = await askInventory(
+      "Remove the Compact camera",
+      reader,
+      {
+        answer: async () => {
+          throw new Error("offline");
+        },
+      },
+      history,
+    );
+    expect(removed.mode).toBe("search");
+    expect(removed.citations.some((row) => row.id === "camera")).toBe(false);
+    expect(removed.citations.some((row) => row.id === "bag")).toBe(true);
+    const restored = await askInventory(
+      "Add Compact camera to my packing list",
+      reader,
+      undefined,
+      [
+        ...history,
+        { question: "Remove the Compact camera", answer: removed.answer },
+      ],
+    );
+    expect(restored.citations.some((row) => row.id === "camera")).toBe(true);
+    expect(restored.changes).toBeUndefined();
+    expect(
+      restored.citations.every(
+        (row) => row.quantity > 0 && ["active", "stored"].includes(row.status),
+      ),
+    ).toBe(true);
+  });
   it("assembles a camping list from usable possessions without inventing missing gear", async () => {
     const result = await askInventory("Pack me for camping", reader);
     expect(result.citations.map((i) => i.id)).toEqual(

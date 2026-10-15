@@ -25,6 +25,76 @@ const context = {
 };
 
 describe("read-only LangGraph answer workflow", () => {
+  it("still stops repeated invalid search requests at the existing four-turn limit", async () => {
+    let calls = 0;
+    let searches = 0;
+    const provider = createReadOnlyAnswerGraph({
+      async invoke() {
+        calls++;
+        return new AIMessage({
+          content: "",
+          tool_calls: [
+            {
+              id: `invalid-${calls}`,
+              name: "search_inventory",
+              args: { query: "x".repeat(201) },
+            },
+          ],
+        });
+      },
+    });
+    await expect(
+      provider.answer(context, {
+        search: async () => {
+          searches++;
+          return [];
+        },
+      }),
+    ).rejects.toThrow("tool loop limit");
+    expect(calls).toBe(4);
+    expect(searches).toBe(0);
+  });
+
+  it("lets the model correct an oversized search without running it or expanding its turn budget", async () => {
+    let calls = 0;
+    const queries: string[] = [];
+    const provider = createReadOnlyAnswerGraph({
+      async invoke(messages) {
+        calls++;
+        if (calls === 2) {
+          expect(String(messages.at(-1)?.content)).toContain("200 characters");
+        }
+        if (calls <= 2)
+          return new AIMessage({
+            content: "",
+            tool_calls: [
+              {
+                id: `search-${calls}`,
+                name: "search_inventory",
+                args: { query: calls === 1 ? "x".repeat(201) : "charger" },
+              },
+            ],
+          });
+        return new AIMessage(
+          JSON.stringify({
+            answer: "Your charger is in Backpack.",
+            itemIds: ["item-1"],
+          }),
+        );
+      },
+    });
+    await expect(
+      provider.answer(context, {
+        search: async (query) => {
+          queries.push(query);
+          return context.items;
+        },
+      }),
+    ).resolves.toMatchObject({ itemIds: ["item-1"] });
+    expect(queries).toEqual(["charger"]);
+    expect(calls).toBe(3);
+  });
+
   it("returns a structured answer from one model invocation", async () => {
     let calls = 0;
     const model: ReadOnlyChatModel = {

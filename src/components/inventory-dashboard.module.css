@@ -270,6 +270,24 @@ button.activityRow:hover {
   width: 100%;
   gap: 10px;
 }
+.inventoryResult {
+  width: 100%;
+  display: grid;
+  gap: 12px;
+}
+.resultSummary p {
+  margin-top: 4px;
+  color: #93b2cc;
+  font-size: 13px;
+}
+.inventoryResult > div > button,
+.loadResults {
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: #19384f;
+  color: #d9eafa;
+  justify-self: start;
+}
 .assistantResults button {
   display: flex;
   align-items: center;

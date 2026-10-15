@@ -9,7 +9,6 @@ import {
   type CSSProperties,
   type FormEvent,
   type ReactNode,
-  Fragment,
 } from "react";
 import {
   Archive,
@@ -51,7 +50,12 @@ import {
 } from "@phosphor-icons/react";
 import type { Icon } from "@phosphor-icons/react";
 import type { Item, Location } from "@/lib/inventory";
-import { ancestors, containerDestinations } from "@/lib/containers";
+import {
+  ancestors,
+  containerDestinations,
+  locationPath,
+  resolveHierarchy,
+} from "@/lib/containers";
 import {
   apiRepository,
   dashboardApi,
@@ -60,8 +64,8 @@ import {
 import type {
   DashboardActivityGroup,
   DashboardBriefing,
-  DashboardSuggestion,
 } from "@/lib/dashboard";
+import { groundedDashboardSuggestion } from "@/lib/dashboard";
 import { validatePhotoFile } from "@/lib/photos";
 import type { SavedInventory } from "./inventory-app";
 import {
@@ -75,6 +79,7 @@ import { SpacesBrowser } from "./spaces-browser";
 import { JarvisChat } from "./jarvis-chat";
 import { GlassSelect } from "./glass-select";
 import { InventoryDashboard } from "./inventory-dashboard";
+import { ItemDraftDialog } from "./item-draft-dialog";
 import {
   useInventoryStore,
   visualItem,
@@ -479,7 +484,10 @@ const initialItems = [...seedItems, ...seedContainers, ...seedAccessories].map(
   },
 );
 
-function sampleDashboardBriefing(items: VisualItem[]): DashboardBriefing {
+function sampleDashboardBriefing(
+  items: VisualItem[],
+  locations: Location[],
+): DashboardBriefing {
   const recent = items
     .filter((item) => item.kind !== "container")
     .toSorted(
@@ -489,8 +497,14 @@ function sampleDashboardBriefing(items: VisualItem[]): DashboardBriefing {
     .slice(0, 4);
   const groups = new Map<string, DashboardActivityGroup>();
   for (const item of recent) {
-    const roomName = item.location_name || "Unassigned";
-    const group = groups.get(roomName) ?? {
+    const room = locations.find(
+      (place) => place.id === item.resolved_location_id,
+    );
+    const roomName = room
+      ? locationPath(room, locations).join(" → ")
+      : item.location_name || "Unassigned";
+    const groupKey = item.resolved_location_id ?? roomName;
+    const group = groups.get(groupKey) ?? {
       room: { id: item.resolved_location_id ?? null, name: roomName },
       activities: [],
     };
@@ -507,39 +521,10 @@ function sampleDashboardBriefing(items: VisualItem[]): DashboardBriefing {
           : null,
       detail: "Updated",
     });
-    groups.set(roomName, group);
+    groups.set(groupKey, group);
   }
 
-  const categories = new Map<string, VisualItem[]>();
-  for (const item of items.filter((row) => row.kind !== "container")) {
-    const key = item.category.trim().toLowerCase();
-    if (key) categories.set(key, [...(categories.get(key) ?? []), item]);
-  }
-  const splitCategory = [...categories.values()]
-    .map((rows) => ({
-      rows,
-      rooms: [
-        ...new Set(
-          rows
-            .map((row) => row.location_name)
-            .filter((name): name is string => Boolean(name)),
-        ),
-      ],
-    }))
-    .filter(({ rows, rooms }) => rows.length >= 2 && rooms.length >= 2)
-    .sort(
-      (a, b) =>
-        b.rows.length - a.rows.length || b.rooms.length - a.rooms.length,
-    )[0];
-  const suggestion: DashboardSuggestion | null = splitCategory
-    ? {
-        id: `sample-split:${splitCategory.rows[0].category.toLowerCase()}`,
-        text: `Jarvis noticed your ${splitCategory.rows[0].category.toLowerCase()} are stored in ${splitCategory.rooms.length} spaces.`,
-        prompt: `Help me review how my ${splitCategory.rows[0].category} items are organized across ${splitCategory.rooms.join(" and ")}. Start with a read-only plan and do not make changes.`,
-        itemIds: splitCategory.rows.map((item) => item.id),
-        roomNames: splitCategory.rooms,
-      }
-    : null;
+  const suggestion = groundedDashboardSuggestion(items);
 
   return {
     asOf: new Date().toISOString(),
@@ -554,33 +539,6 @@ function sampleDashboardBriefing(items: VisualItem[]): DashboardBriefing {
     suggestion,
   };
 }
-
-const navItems = [
-  {
-    label: "Home",
-    value: "all",
-    Icon: House,
-    icon: undefined,
-    color: undefined,
-    place: undefined,
-  },
-  {
-    label: "College",
-    value: "College",
-    Icon: Buildings,
-    icon: undefined,
-    color: undefined,
-    place: undefined,
-  },
-  {
-    label: "Car",
-    value: "Car",
-    Icon: CarProfile,
-    icon: undefined,
-    color: undefined,
-    place: undefined,
-  },
-] as const;
 
 const initialLocationOptions = [
   "Home",
@@ -619,6 +577,9 @@ const placeColorOptions = [
 type PlaceIconValue = (typeof placeIconOptions)[number]["value"];
 type PlaceColorValue = (typeof placeColorOptions)[number]["value"];
 type Place = {
+  id?: string;
+  parent_location_id?: string | null;
+  version?: number;
   parent?: string;
   name: string;
   icon: PlaceIconValue;
@@ -650,15 +611,21 @@ function SidebarContainerTree({
   items,
   spaceName,
   openedContainer,
+  spaceId,
   onOpen,
 }: {
   items: VisualItem[];
   spaceName: string;
   openedContainer: string | null;
+  spaceId?: string;
   onOpen: (container: VisualItem) => void;
 }) {
   const containers = items.filter(
-    (item) => item.kind === "container" && item.location_name === spaceName,
+    (item) =>
+      item.kind === "container" &&
+      (spaceId
+        ? item.resolved_location_id === spaceId
+        : item.location_name === spaceName),
   );
   if (!containers.length)
     return <span className={styles.emptyBranch}>No containers</span>;
@@ -709,6 +676,106 @@ function SidebarContainerTree({
   return <>{branches}</>;
 }
 
+function PersistedLocationTree({
+  locations,
+  items,
+  selected,
+  openedContainer,
+  expanded,
+  onNavigate,
+  onToggle,
+  onContainer,
+  onRoom,
+  onEdit,
+  appearance,
+}: {
+  locations: Location[];
+  items: VisualItem[];
+  selected: string;
+  openedContainer: string | null;
+  expanded: Record<string, boolean>;
+  onNavigate: (place: Location) => void;
+  onToggle: (id: string) => void;
+  onContainer: (container: VisualItem, place: Location) => void;
+  onRoom: (space: Location) => void;
+  onEdit: (place: Location) => void;
+  appearance: Place[];
+}) {
+  function branch(place: Location): ReactNode {
+    const design = appearance.find((entry) => entry.id === place.id);
+    const PlaceIcon =
+      design?.Icon ?? (place.parent_location_id ? Folder : MapPin);
+    return (
+      <div key={place.id}>
+        <div className={styles.spaceBranchRow}>
+          <button
+            aria-pressed={selected === place.id}
+            data-place-icon={design?.icon}
+            style={
+              design
+                ? ({ "--place-color": design.color } as CSSProperties)
+                : undefined
+            }
+            onDoubleClick={() => onEdit(place)}
+            aria-expanded={!!expanded[place.id]}
+            aria-label={
+              locations.filter((entry) => entry.name === place.name).length > 1
+                ? locationPath(place, locations).join(" → ")
+                : place.name
+            }
+            onClick={() => {
+              onNavigate(place);
+              onToggle(place.id);
+            }}
+          >
+            <PlaceIcon />
+            <span>{place.name}</span>
+            {expanded[place.id] ? (
+              <CaretDown className={styles.navChevron} />
+            ) : (
+              <CaretRight className={styles.navChevron} />
+            )}
+          </button>
+        </div>
+        {expanded[place.id] && (
+          <div className={styles.containerTree}>
+            {!place.parent_location_id && (
+              <>
+                {locations
+                  .filter((room) => room.parent_location_id === place.id)
+
+                  .map(branch)}
+                <button
+                  className={styles.roomAdd}
+                  onClick={() => onRoom(place)}
+                >
+                  {" "}
+                  <Plus /> Add room
+                </button>
+              </>
+            )}
+            <SidebarContainerTree
+              items={items}
+              spaceName={place.name}
+              spaceId={place.id}
+              openedContainer={openedContainer}
+              onOpen={(container) => onContainer(container, place)}
+            />
+          </div>
+        )}
+      </div>
+    );
+  }
+  return (
+    <>
+      {locations
+        .filter((place) => !place.parent_location_id)
+
+        .map(branch)}
+    </>
+  );
+}
+
 export function LiquidDashboard({
   savedInventory,
   accountControls,
@@ -742,11 +809,51 @@ export function LiquidDashboard({
     message: string;
   } | null>(null);
   const [places, setPlaces] = useState<Place[]>(() =>
-    initialLocationOptions.map(defaultPlace),
+    initialLocationOptions.map((name, index) => ({
+      ...defaultPlace(name),
+      id: `sample-location-${index}`,
+      parent_location_id:
+        defaultPlace(name).parent === "Home" ? "sample-location-0" : null,
+      version: 1,
+    })),
+  );
+  const effectiveLocations: Location[] =
+    storageMode === "saved"
+      ? locations
+      : places.map((place) => ({
+          id: place.id!,
+          name: place.name,
+          user_id: initialItems[0].user_id,
+          parent_location_id:
+            place.parent_location_id ??
+            places.find(
+              (parent) => parent.name === place.parent && !parent.parent,
+            )?.id ??
+            null,
+          version: place.version ?? 1,
+        }));
+  const hierarchyItems = resolveHierarchy(
+    items.map((item) => ({
+      ...item,
+      location_id: item.parent_container_id
+        ? null
+        : (item.location_id ??
+          effectiveLocations.find((place) => place.name === item.location_name)
+            ?.id ??
+          null),
+    })),
+    effectiveLocations,
   );
   const [deletingPlace, setDeletingPlace] = useState(false);
   const [moveDestination, setMoveDestination] = useState("");
   const [savingPlace, setSavingPlace] = useState(false);
+  const [placeParent, setPlaceParent] = useState<{
+    id?: string;
+    name: string;
+  } | null>(null);
+  const placeSubmitting = useRef(false);
+  const placeRequestId = useRef("");
+  const placeOpener = useRef<HTMLElement | null>(null);
   const [addingPlace, setAddingPlace] = useState(false);
   useEffect(() => {
     if (!addingPlace) return;
@@ -768,37 +875,18 @@ export function LiquidDashboard({
       : places.map((place) => place.name);
   const managedPlaces: Place[] =
     storageMode === "saved"
-      ? locations.map((place) => defaultPlace(place.name))
-      : places;
-  const navigation = [
-    navItems[0],
-    ...(storageMode === "saved"
-      ? locations.map((location) => ({
-          label: location.name,
-          value: location.name,
-          Icon: MapPin,
-          color: undefined,
-          icon: undefined,
-          place: undefined,
-        }))
-      : []),
-    ...(storageMode === "sample" ? places : [])
-      .filter(
-        (place) =>
-          place.name !== "Home" &&
-          (!place.parent || !locationOptions.includes(place.parent)),
-      )
-      .map((place) => ({
-        label: place.name,
-        value: place.name,
-        Icon: place.Icon,
-        color: place.color,
-        icon: place.icon,
-        place,
-      })),
-  ];
+      ? locations
+          .filter((place) => !place.parent_location_id)
+          .map((place) => ({
+            ...defaultPlace(place.name),
+            id: place.id,
+            parent: undefined,
+          }))
+      : places.filter((place) => !place.parent);
   const [selectedId, setSelectedId] = useState(seedItems[0].id);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [draftItem, setDraftItem] = useState<VisualItem | null>(null);
+  const draftOpener = useRef<HTMLElement | null>(null);
   const [mobileNav, setMobileNav] = useState(false);
   const railRef = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -843,7 +931,7 @@ export function LiquidDashboard({
   }, [mobileNav]);
   const [section, setSection] = useState("Dashboard");
   const [expandedSpaces, setExpandedSpaces] = useState<Record<string, boolean>>(
-    { Home: true },
+    { "sample-location-0": true },
   );
   const toggleSpace = (name: string) =>
     setExpandedSpaces((current) => ({ ...current, [name]: !current[name] }));
@@ -868,6 +956,13 @@ export function LiquidDashboard({
   const promptSequence = useRef(0);
   const [kind, setKind] = useState<InventoryViewOptions["kind"]>("all");
   const [location, setLocation] = useState("all");
+  const selectedLocation = effectiveLocations.find(
+    (place) => place.id === location || place.name === location,
+  );
+  const selectedSpace =
+    selectedLocation && !selectedLocation.parent_location_id
+      ? selectedLocation
+      : undefined;
   const [sort, setSort] = useState<InventoryViewOptions["sort"]>("recent");
   const [view, setView] = useState<"grid" | "list">("grid");
   const [editing, setEditing] = useState(false);
@@ -880,13 +975,21 @@ export function LiquidDashboard({
   const [notice, setNotice] = useState(
     savedInventory ? "Saved inventory ready" : "Sample inventory is ready",
   );
+  useEffect(() => {
+    if (!notice) return;
+    const timeout = window.setTimeout(() => setNotice(""), 8000);
+    return () => window.clearTimeout(timeout);
+  }, [notice]);
   const [dashboardBriefing, setDashboardBriefing] =
     useState<DashboardBriefing | null>(null);
   const [dashboardError, setDashboardError] = useState("");
   const [dashboardAttempt, setDashboardAttempt] = useState(0);
   const acknowledgedDashboard = useRef(new Set<string>());
   const previousPendingSaves = useRef(pendingSaves);
-  const sampleBriefing = useMemo(() => sampleDashboardBriefing(items), [items]);
+  const sampleBriefing = sampleDashboardBriefing(
+    hierarchyItems,
+    effectiveLocations,
+  );
 
   useEffect(() => {
     if (
@@ -938,64 +1041,56 @@ export function LiquidDashboard({
     });
   }, [dashboardBriefing, section, storageMode]);
 
-  const filtered = useMemo(
-    () =>
-      filterInventory(items, {
-        query,
-        kind,
-        location: location === "Home" ? "all" : location,
-        sort,
-      }).filter(
-        (item) =>
-          (location !== "Home" ||
-            item.location_name === "Home" ||
-            (storageMode === "sample" &&
-              places.some(
-                (place) =>
-                  place.parent === "Home" && place.name === item.location_name,
-              ))) &&
-          (category === "all" || item.category === category) &&
-          (status === "all" || item.status === status) &&
-          (section !== "Favorites" || item.tags.includes("favorite")) &&
-          (!tagFilter || item.tags.includes(tagFilter)),
-      ),
-    [
-      items,
-      kind,
-      location,
-      query,
-      sort,
-      category,
-      status,
-      section,
-      tagFilter,
-      places,
-      storageMode,
-    ],
+  const filtered = filterInventory(hierarchyItems, {
+    query,
+    kind,
+    location: location === "Home" ? "all" : location,
+    sort,
+  }).filter(
+    (item) =>
+      (location !== "Home" ||
+        item.location_name === "Home" ||
+        (storageMode === "sample" &&
+          places.some(
+            (place) =>
+              place.parent === "Home" && place.name === item.location_name,
+          ))) &&
+      (category === "all" || item.category === category) &&
+      (status === "all" || item.status === status) &&
+      (section !== "Favorites" || item.tags.includes("favorite")) &&
+      (!tagFilter || item.tags.includes(tagFilter)),
   );
   const selected =
-    items.find((item) => item.id === selectedId) ?? items[0] ?? null;
+    hierarchyItems.find((item) => item.id === selectedId) ??
+    hierarchyItems[0] ??
+    null;
   const visibleItems = filtered;
   const placementOptions = [
-    ...[...new Set(locationOptions)].map((name) => ({
-      value: `location:${name}`,
-      label: name,
-    })),
-    ...containerDestinations(items, selected ?? undefined).map((item) => ({
-      value: `container:${item.id}`,
-      label: item.location_path?.join(" → ") || item.name,
-    })),
+    ...(effectiveLocations.length
+      ? effectiveLocations.map((place) => ({
+          value: `location:${place.id}`,
+          label: locationPath(place, effectiveLocations).join(" → "),
+        }))
+      : [...new Set(locationOptions)].map((name) => ({
+          value: `location:${name}`,
+          label: name,
+        }))),
+    ...containerDestinations(hierarchyItems, selected ?? undefined).map(
+      (item) => ({
+        value: `container:${item.id}`,
+        label: item.location_path?.join(" → ") || item.name,
+      }),
+    ),
   ];
   const placementValue = selected?.parent_container_id
     ? `container:${selected.parent_container_id}`
-    : `location:${selected?.location_name ?? locationOptions[0] ?? "Unassigned"}`;
+    : `location:${selected?.location_id ?? ""}`;
 
   const currentContainer = items.find((item) => item.id === openedContainer);
   const canAddContainer =
     currentContainer?.kind === "container" ||
-    (locationOptions.includes(location) &&
-      (storageMode !== "saved" ||
-        locations.some((entry) => entry.name === location)));
+    ((Boolean(selectedLocation) || locationOptions.includes(location)) &&
+      (storageMode !== "saved" || Boolean(selectedLocation)));
   const containerChain = currentContainer
     ? [...ancestors(currentContainer, items), currentContainer]
     : [];
@@ -1028,7 +1123,14 @@ export function LiquidDashboard({
     )
       setDashboardAttempt((value) => value + 1);
     setSection(label);
-    setLocation(label === "Home" && place === "all" ? "Home" : place);
+    const requestedPlace = label === "Home" && place === "all" ? "Home" : place;
+    setLocation(
+      effectiveLocations.find(
+        (entry) =>
+          entry.id === requestedPlace ||
+          (!entry.parent_location_id && entry.name === requestedPlace),
+      )?.id ?? "all",
+    );
     setOpenedContainer(null);
     setCategory("all");
     setStatus("all");
@@ -1048,7 +1150,21 @@ export function LiquidDashboard({
 
   function openContainer(id: string | null) {
     setOpenedContainer(id);
-    const spaceName = items.find((item) => item.id === id)?.location_name;
+    const row = hierarchyItems.find((item) => item.id === id);
+    if (row?.resolved_location_id) {
+      const place = effectiveLocations.find(
+        (entry) => entry.id === row.resolved_location_id,
+      );
+      setExpandedSpaces((current) => ({
+        ...current,
+        [row.resolved_location_id!]: true,
+        ...(place?.parent_location_id
+          ? { [place.parent_location_id]: true }
+          : {}),
+      }));
+      return;
+    }
+    const spaceName = row?.location_name;
     if (!spaceName) return;
     setExpandedSpaces((current) => ({
       ...current,
@@ -1177,8 +1293,16 @@ export function LiquidDashboard({
       const parent = patch.parent_container_id
         ? items.find((item) => item.id === patch.parent_container_id)
         : undefined;
-      nextPatch.location_id = null;
-      nextPatch.location_name = parent?.location_name ?? selected.location_name;
+      nextPatch.location_id = parent
+        ? null
+        : (patch.location_id ??
+          selected.resolved_location_id ??
+          selected.location_id);
+      nextPatch.location_name =
+        parent?.location_name ??
+        effectiveLocations.find((place) => place.id === nextPatch.location_id)
+          ?.name ??
+        selected.location_name;
     }
     patchItem(selected.id, nextPatch);
   }
@@ -1208,7 +1332,7 @@ export function LiquidDashboard({
   const currentTagDraft =
     tagDraft.itemId === selected?.id ? tagDraft.value : "";
 
-  const availablePastTags = useMemo(() => {
+  const availablePastTags = (() => {
     if (!selected) return [];
     const currentTagsLower = new Set(selected.tags.map((t) => t.toLowerCase()));
     return allPastTags.filter((tag) => {
@@ -1218,7 +1342,7 @@ export function LiquidDashboard({
       }
       return true;
     });
-  }, [allPastTags, selected, currentTagDraft]);
+  })();
 
   function addTag(rawTag: string) {
     const tag = rawTag.trim();
@@ -1265,10 +1389,16 @@ export function LiquidDashboard({
     setPlaceError("");
     setPlaceIcon("MapPin");
     setPlaceColor("blue");
-    addPlaceButton.current?.focus();
+    setTimeout(() => {
+      if (placeOpener.current?.isConnected) placeOpener.current.focus();
+      else addPlaceButton.current?.focus();
+    }, 0);
   }
 
   function openAddPlace() {
+    placeOpener.current = document.activeElement as HTMLElement | null;
+    setPlaceParent(null);
+    placeRequestId.current = crypto.randomUUID();
     setIconChoicesOpen(false);
     setEditingPlace(null);
     setPlaceName("");
@@ -1278,11 +1408,30 @@ export function LiquidDashboard({
     setAddingPlace(true);
   }
 
+  function openAddRoom(
+    parent = selectedSpace
+      ? { id: selectedSpace.id, name: selectedSpace.name }
+      : { name: location },
+  ) {
+    openAddPlace();
+    setPlaceParent(parent);
+    setPlaceIcon("Bed");
+  }
+
   function openEditPlace(place: Place) {
+    placeOpener.current = document.activeElement as HTMLElement | null;
+    const target = effectiveLocations.find((entry) => entry.id === place.id);
+    setPlaceParent(
+      target?.parent_location_id
+        ? (effectiveLocations.find(
+            (entry) => entry.id === target.parent_location_id,
+          ) ?? null)
+        : null,
+    );
     setIconChoicesOpen(false);
     setDeletingPlace(false);
     setMoveDestination(
-      locationOptions.find((name) => name !== place.name) ?? "",
+      effectiveLocations.find((entry) => entry.id !== place.id)?.id ?? "",
     );
     const matchingColor = placeColorOptions.find(
       (option) => option.color === place.color,
@@ -1297,6 +1446,7 @@ export function LiquidDashboard({
 
   async function createPlace(event: FormEvent) {
     event.preventDefault();
+    if (placeSubmitting.current) return;
     if (store.pending) {
       setPlaceError(
         "Wait for your item changes to finish saving, then try again.",
@@ -1305,17 +1455,25 @@ export function LiquidDashboard({
     }
     const name = placeName.trim();
     if (!name) {
-      setPlaceError("Place name is required");
+      setPlaceError(
+        placeParent ? "Room name is required" : "Place name is required",
+      );
+      document.getElementById("place-name")?.focus();
       return;
     }
-    const duplicate = locationOptions.find(
-      (place) => place.toLowerCase() === name.toLowerCase(),
-    );
+    const duplicate = effectiveLocations
+      .filter(
+        (place) =>
+          (place.parent_location_id ?? null) === (placeParent?.id ?? null),
+      )
+      .map((place) => place.name)
+      .find((place) => place.toLowerCase() === name.toLowerCase());
     if (
       duplicate &&
       duplicate.toLowerCase() !== editingPlace?.name.toLowerCase()
     ) {
       setPlaceError("That place already exists");
+      document.getElementById("place-name")?.focus();
       return;
     }
     const selectedIcon = placeIconOptions.find(
@@ -1324,188 +1482,193 @@ export function LiquidDashboard({
     const selectedColor = placeColorOptions.find(
       (option) => option.value === placeColor,
     );
-    if (editingPlace) {
-      const previousName = editingPlace.name;
-      if (storageMode === "saved") {
-        const target = locations.find((place) => place.name === previousName);
-        if (!target) return;
-        setSavingPlace(true);
-        try {
-          const updated = await apiRepository.updateLocation(target.id, name);
-          const nextLocations = locations.map((place) =>
-            place.id === updated.id ? updated : place,
+    placeSubmitting.current = true;
+    setSavingPlace(true);
+    try {
+      if (editingPlace) {
+        const previousName = editingPlace.name;
+        if (storageMode === "saved") {
+          const target = locations.find(
+            (place) =>
+              place.id === editingPlace.id ||
+              (!editingPlace.id && place.name === previousName),
           );
-          setLocations(nextLocations);
-          store.load(items, nextLocations);
-          if (location === previousName) setLocation(name);
-          if (section === previousName) setSection(name);
-          setNotice(`${name} updated`);
-          closePlaceForm();
-        } catch (error) {
-          setPlaceError(
-            error instanceof Error
-              ? error.message
-              : "Could not update this space.",
-          );
-        } finally {
-          setSavingPlace(false);
+          if (!target) return;
+          setSavingPlace(true);
+          try {
+            const updated = await apiRepository.updateLocation(target.id, name);
+            const nextLocations = locations.map((place) =>
+              place.id === updated.id ? updated : place,
+            );
+            setLocations(nextLocations);
+            store.load(items, nextLocations);
+            if (location === previousName) setLocation(name);
+            if (section === previousName) setSection(name);
+            setNotice(`${name} updated`);
+            closePlaceForm();
+          } catch (error) {
+            setPlaceError(
+              error instanceof Error
+                ? error.message
+                : "Could not update this space.",
+            );
+          } finally {
+            setSavingPlace(false);
+          }
+          return;
         }
-        return;
-      }
-      const updatedPlace: Place = {
-        ...editingPlace,
-        name,
-        icon: placeIcon,
-        color: selectedColor?.color ?? placeColorOptions[0].color,
-        Icon: selectedIcon?.Icon ?? MapPin,
-      };
-      setPlaces((current) =>
-        current.map((place) =>
-          place.name === previousName ? updatedPlace : place,
-        ),
-      );
-      setItems((current) =>
-        current.map((item) =>
-          item.location_name === previousName
-            ? {
-                ...item,
-                location_name: name,
-                version: item.version + 1,
-                updated_at: now(),
-              }
-            : item,
-        ),
-      );
-      if (location === previousName) setLocation(name);
-      if (section === previousName) setSection(name);
-      setNotice(`${name} updated`);
-      closePlaceForm();
-      return;
-    }
-    if (storageMode === "saved") {
-      try {
-        const createdLocation = await apiRepository.createLocation(name);
-        setLocations((current) =>
-          [...current, createdLocation].sort((left, right) =>
-            left.name.localeCompare(right.name),
+        const updatedPlace: Place = {
+          ...editingPlace,
+          name,
+          icon: placeIcon,
+          color: selectedColor?.color ?? placeColorOptions[0].color,
+          Icon: selectedIcon?.Icon ?? MapPin,
+        };
+        setPlaces((current) =>
+          current.map((place) =>
+            place.id === editingPlace.id ? updatedPlace : place,
           ),
         );
-        setLocation(name);
-        setSection(name);
-        setQuery("");
-        setKind("all");
-        setNotice(`${name} saved`);
-        closePlaceForm();
-      } catch (error: unknown) {
-        setPlaceError(
-          error instanceof Error
-            ? error.message
-            : "Could not save this place. Please try again.",
-        );
-      }
-      return;
-    }
-    setPlaces((current) => [
-      ...current,
-      {
-        name,
-        icon: placeIcon,
-        color: selectedColor?.color ?? placeColorOptions[0].color,
-        Icon: selectedIcon?.Icon ?? MapPin,
-      },
-    ]);
-    setLocation(name);
-    setSection(name);
-    setQuery("");
-    setKind("all");
-    setNotice(`${name} added`);
-    closePlaceForm();
-  }
-
-  async function deletePlace() {
-    if (!editingPlace) return;
-    if (store.pending) {
-      setPlaceError(
-        "Wait for your item changes to finish saving, then try again.",
-      );
-      return;
-    }
-    const deletedName = editingPlace.name;
-    const hasItems = items.some((item) => item.location_name === deletedName);
-    if (hasItems && !moveDestination) {
-      setPlaceError(
-        "Create another space before deleting this one so your items have somewhere to go.",
-      );
-      return;
-    }
-    if (storageMode === "saved") {
-      const target = locations.find((place) => place.name === deletedName);
-      if (!target) return;
-      setSavingPlace(true);
-      try {
-        await apiRepository.removeLocation(
-          target.id,
-          locations.find((place) => place.name === moveDestination)?.id ?? null,
-        );
-        const nextLocations = locations.filter(
-          (place) => place.id !== target.id,
-        );
-        const destination = nextLocations.find(
-          (place) => place.name === moveDestination,
-        );
-        setLocations(nextLocations);
-        store.load(
-          items.map((item) =>
-            item.location_id === target.id
+        setItems((current) =>
+          current.map((item) =>
+            item.location_name === previousName
               ? {
                   ...item,
-                  location_id: destination?.id ?? null,
-                  location_name: destination?.name ?? null,
+                  location_name: name,
                   version: item.version + 1,
                   updated_at: now(),
                 }
               : item,
           ),
-          nextLocations,
         );
-      } catch (error) {
-        setPlaceError(
-          error instanceof Error
-            ? error.message
-            : "Could not delete this space.",
-        );
-        setSavingPlace(false);
+        if (location === previousName) setLocation(name);
+        if (section === previousName) setSection(name);
+        setNotice(`${name} updated`);
+        closePlaceForm();
         return;
       }
+      if (storageMode === "saved") {
+        try {
+          const createdLocation = await apiRepository.createLocation(
+            name,
+            placeParent?.id ?? null,
+            placeRequestId.current,
+          );
+          setLocations((current) =>
+            [...current, createdLocation].sort((left, right) =>
+              left.name.localeCompare(right.name),
+            ),
+          );
+          setLocation(createdLocation.id);
+          setSection(name);
+          setQuery("");
+          setKind("all");
+          setNotice(`${name} saved`);
+          closePlaceForm();
+        } catch (error: unknown) {
+          setPlaceError(
+            error instanceof Error
+              ? error.message
+              : "Could not save this place. Please try again.",
+          );
+        }
+        return;
+      }
+      setPlaces((current) => [
+        ...current,
+        {
+          name,
+          id: placeRequestId.current,
+          version: 1,
+          parent: placeParent?.name,
+          parent_location_id: placeParent?.id ?? null,
+          icon: placeIcon,
+          color: selectedColor?.color ?? placeColorOptions[0].color,
+          Icon: selectedIcon?.Icon ?? MapPin,
+        },
+      ]);
+      setLocation(placeRequestId.current);
+      setSection(name);
+      setQuery("");
+      setKind("all");
+      setNotice(`${name} added`);
+      closePlaceForm();
+    } finally {
+      placeSubmitting.current = false;
       setSavingPlace(false);
     }
-    setPlaces((current) =>
-      current.filter((place) => place.name !== deletedName),
-    );
-    if (storageMode === "sample")
-      setItems((current) =>
-        current.map((item) =>
-          item.location_name === deletedName
-            ? {
-                ...item,
-                location_name: moveDestination,
-                version: item.version + 1,
-                updated_at: now(),
-              }
-            : item,
-        ),
-      );
-    if (location === deletedName) {
-      setLocation("all");
-      setSection("All items");
-      setOpenedContainer(null);
+  }
+
+  async function deletePlace() {
+    if (!editingPlace || savingPlace || placeSubmitting.current) return;
+    if (store.pending) {
+      setPlaceError("Wait for item changes to finish saving.");
+      return;
     }
-    setNotice(
-      hasItems
-        ? `${deletedName} deleted; items moved to ${moveDestination}`
-        : `${deletedName} deleted`,
+    const target = effectiveLocations.find(
+      (place) =>
+        place.id === editingPlace.id ||
+        (!editingPlace.id && place.name === editingPlace.name),
     );
-    closePlaceForm();
+    if (!target) return;
+    if (
+      effectiveLocations.some((room) => room.parent_location_id === target.id)
+    ) {
+      setPlaceError("Move or remove rooms before deleting this space.");
+      return;
+    }
+    const destination = effectiveLocations.find(
+      (place) => place.id === moveDestination || place.name === moveDestination,
+    );
+    const hasItems = hierarchyItems.some(
+      (item) => item.resolved_location_id === target.id,
+    );
+    if (hasItems && !destination) {
+      setPlaceError("Choose another space or room for the contents first.");
+      return;
+    }
+    placeSubmitting.current = true;
+    setSavingPlace(true);
+    try {
+      if (storageMode === "saved")
+        await apiRepository.removeLocation(target.id, destination?.id ?? null);
+      const nextLocations = effectiveLocations.filter(
+        (place) => place.id !== target.id,
+      );
+      const rows = hierarchyItems.map((item) =>
+        item.location_id === target.id
+          ? {
+              ...item,
+              location_id: destination?.id ?? null,
+              location_name: destination?.name ?? null,
+              version: item.version + 1,
+              updated_at: now(),
+            }
+          : item,
+      );
+      if (storageMode === "saved") setLocations(nextLocations);
+      else
+        setPlaces((current) =>
+          current.filter((place) => place.id !== target.id),
+        );
+      store.load(rows, nextLocations);
+      if (selectedLocation?.id === target.id) navigate("All items");
+      setNotice(
+        target.name +
+          " deleted" +
+          (hasItems ? "; contents moved to " + destination?.name : ""),
+      );
+      closePlaceForm();
+    } catch (failure) {
+      setPlaceError(
+        failure instanceof Error
+          ? failure.message
+          : "Could not confirm deletion. Reload before trying again.",
+      );
+    } finally {
+      placeSubmitting.current = false;
+      setSavingPlace(false);
+    }
   }
 
   function selectItem(item: Item) {
@@ -1516,94 +1679,64 @@ export function LiquidDashboard({
     setShowTagSuggestions(false);
   }
 
-  async function addItem(parentId?: string) {
-    const id = crypto.randomUUID();
-    const parent = parentId
-      ? items.find((item) => item.id === parentId)
-      : undefined;
+  function openItemDraft(kind: "durable" | "container", parentId?: string) {
+    draftOpener.current = document.activeElement as HTMLElement | null;
+    const parent = hierarchyItems.find((item) => item.id === parentId);
     const locationName =
       parent?.location_name ??
-      (location === "all" ? (locations[0]?.name ?? "Home") : location);
+      (location === "all" ? null : (selectedLocation?.name ?? location));
     const locationId =
-      locations.find(
-        (entry) => entry.name.toLowerCase() === locationName.toLowerCase(),
-      )?.id ?? null;
-    if (storageMode === "saved" && !parent && !locationId) {
-      setNotice("Create a place before adding a root item");
-      return;
-    }
-    const created: VisualItem = {
-      ...seedItems[7],
-      id,
-      name: "New item",
-      description: "Add a few details so this item is easy to find later.",
+      selectedLocation?.id ??
+      locations.find((entry) => entry.name === locationName)?.id ??
+      null;
+    setDetailsOpen(false);
+    setDraftItem({
+      ...(kind === "container" ? seedContainers[0] : seedItems[7]),
+      id: crypto.randomUUID(),
+      name: "",
+      kind,
+      description: "",
+      category: "",
       tags: [],
+      attributes: {},
+      image:
+        kind === "container"
+          ? "/inventory-assets/container.svg"
+          : "/inventory-assets/item.svg",
       location_id: parent ? null : locationId,
       parent_container_id: parentId ?? null,
       location_name: locationName,
       created_at: now(),
       updated_at: now(),
       version: 1,
-    };
-    const result = await createItem(created);
-    if (!result) {
-      setNotice("Could not save the new item");
-      return;
-    }
-    setSelectedId(result.id);
-    setDetailsOpen(true);
-    setQuery("");
-    setKind("all");
-    setEditName(created.name);
-    setNameError("");
-    setEditing(true);
-    setNotice(parent ? `New item added to ${parent.name}` : "New item added");
+    });
   }
 
-  async function addContainer(parentId?: string) {
-    const id = crypto.randomUUID();
-    const parent = parentId
-      ? items.find((item) => item.id === parentId)
-      : undefined;
-    const locationName =
-      parent?.location_name ??
-      (location === "all" ? (locations[0]?.name ?? "Home") : location);
-    const locationId =
-      locations.find(
-        (entry) => entry.name.toLowerCase() === locationName.toLowerCase(),
-      )?.id ?? null;
-    if (storageMode === "saved" && !parent && !locationId) {
-      setNotice("Create a place before adding a root container");
-      return;
-    }
-    const created: VisualItem = {
-      ...seedContainers[0],
-      id,
-      name: "New container",
-      description: "Add a name so this container is easy to find later.",
-      tags: [],
-      location_id: parent ? null : locationId,
-      parent_container_id: parentId ?? null,
-      location_name: locationName,
-      created_at: now(),
-      updated_at: now(),
-      version: 1,
-    };
-    const result = await createItem(created);
-    if (!result) {
-      setNotice("Could not save the new container");
-      return;
-    }
+  function addItem(parentId?: string) {
+    openItemDraft("durable", parentId);
+  }
+  function addContainer(parentId?: string) {
+    openItemDraft("container", parentId);
+  }
+
+  async function confirmItemDraft(draft: VisualItem) {
+    if (
+      !draft.parent_container_id &&
+      (!draft.location_name || (storageMode === "saved" && !draft.location_id))
+    )
+      return "Choose a space or room first. Add a space from Spaces if none exists.";
+    const result = await createItem(draft, undefined, draft.id);
+    if (!result)
+      return "Could not confirm the save. Your draft is kept. Reload saved inventory before trying again.";
+    setDraftItem(null);
     setSelectedId(result.id);
     setDetailsOpen(true);
+    setEditing(false);
+    setEditName(result.name);
     setQuery("");
     setKind("all");
-    setEditName(created.name);
-    setNameError("");
-    setEditing(true);
-    setNotice(
-      parent ? `New container added to ${parent.name}` : "New container added",
-    );
+    setNotice(result.kind === "container" ? "Container added" : "Item added");
+    return undefined;
   }
 
   async function removeSelected() {
@@ -1645,7 +1778,11 @@ export function LiquidDashboard({
 
   return (
     <main className={styles.shell}>
-      <div className={styles.workspace}>
+      <div
+        className={styles.workspace}
+        inert={Boolean(draftItem) || addingPlace}
+        aria-hidden={Boolean(draftItem) || addingPlace ? true : undefined}
+      >
         <aside
           ref={railRef}
           role={mobileNav ? "dialog" : undefined}
@@ -1701,147 +1838,35 @@ export function LiquidDashboard({
             <button
               ref={addPlaceButton}
               onClick={openAddPlace}
-              aria-label="Add place"
+              aria-label="Add space"
               aria-expanded={addingPlace}
             >
               <Plus />
             </button>
           </div>
           <nav className={styles.spaceNav} aria-label="Inventory locations">
-            {locationOptions.includes("Home") && (
-              <>
-                <div className={styles.spaceBranchRow}>
-                  <button
-                    className={styles.homeSpace}
-                    aria-expanded={!!expandedSpaces.Home}
-                    aria-controls="home-space-children"
-                    onClick={() => {
-                      navigate("Home");
-                      toggleSpace("Home");
-                    }}
-                    aria-pressed={location === "Home"}
-                  >
-                    <House weight="fill" />
-                    <span>Home</span>
-                    {expandedSpaces.Home ? (
-                      <CaretDown className={styles.navChevron} />
-                    ) : (
-                      <CaretRight className={styles.navChevron} />
-                    )}
-                  </button>
-                </div>
-                {expandedSpaces.Home && (
-                  <div className={styles.roomTree} id="home-space-children">
-                    {(storageMode === "saved"
-                      ? []
-                      : places
-                          .filter((place) => place.parent === "Home")
-                          .map((place) => place.name)
-                    ).map((room) => (
-                      <Fragment key={room}>
-                        <div className={styles.spaceBranchRow}>
-                          <button
-                            aria-pressed={location === room}
-                            className={
-                              location === room ? styles.activeRoom : ""
-                            }
-                            aria-expanded={!!expandedSpaces[room]}
-                            onClick={() => {
-                              navigate(room, room);
-                              toggleSpace(room);
-                            }}
-                          >
-                            <Folder />
-                            <span>{room}</span>
-                            {expandedSpaces[room] ? (
-                              <CaretDown className={styles.navChevron} />
-                            ) : (
-                              <CaretRight className={styles.navChevron} />
-                            )}
-                          </button>
-                        </div>
-                        {expandedSpaces[room] && (
-                          <div className={styles.containerTree}>
-                            <SidebarContainerTree
-                              items={items}
-                              spaceName={room}
-                              openedContainer={openedContainer}
-                              onOpen={(container) => {
-                                navigate(room, room);
-                                openContainer(container.id);
-                              }}
-                            />
-                          </div>
-                        )}
-                      </Fragment>
-                    ))}
-                    {storageMode === "saved" && (
-                      <div className={styles.containerTree}>
-                        <SidebarContainerTree
-                          items={items}
-                          spaceName="Home"
-                          openedContainer={openedContainer}
-                          onOpen={(container) => {
-                            navigate("Home");
-                            openContainer(container.id);
-                          }}
-                        />
-                      </div>
-                    )}
-                  </div>
-                )}
-              </>
-            )}
-            {navigation
-              .filter(
-                (entry) => entry.value !== "all" && entry.value !== "Home",
-              )
-              .map(({ label, value, Icon, icon, color, place }) => (
-                <Fragment key={value}>
-                  <div className={styles.spaceBranchRow}>
-                    <button
-                      className={location === value ? styles.activeNav : ""}
-                      data-place-icon={icon}
-                      style={
-                        color
-                          ? ({ "--place-color": color } as CSSProperties)
-                          : undefined
-                      }
-                      onClick={() => {
-                        navigate(label, value);
-                        toggleSpace(value);
-                      }}
-                      onDoubleClick={() => place && openEditPlace(place)}
-                      aria-pressed={location === value}
-                      aria-expanded={!!expandedSpaces[value]}
-                      title={
-                        place ? `Double-click to edit ${label}` : undefined
-                      }
-                    >
-                      <Icon />
-                      <span>{label}</span>
-                      {expandedSpaces[value] ? (
-                        <CaretDown className={styles.navChevron} />
-                      ) : (
-                        <CaretRight className={styles.navChevron} />
-                      )}
-                    </button>
-                  </div>
-                  {expandedSpaces[value] && (
-                    <div className={styles.containerTree}>
-                      <SidebarContainerTree
-                        items={items}
-                        spaceName={value}
-                        openedContainer={openedContainer}
-                        onOpen={(container) => {
-                          navigate(label, value);
-                          openContainer(container.id);
-                        }}
-                      />
-                    </div>
-                  )}
-                </Fragment>
-              ))}
+            <PersistedLocationTree
+              locations={effectiveLocations}
+              items={hierarchyItems}
+              selected={selectedLocation?.id ?? location}
+              openedContainer={openedContainer}
+              expanded={expandedSpaces}
+              onNavigate={(place) => navigate(place.name, place.id)}
+              onToggle={toggleSpace}
+              onContainer={(container, place) => {
+                navigate(place.name, place.id);
+                openContainer(container.id);
+              }}
+              onRoom={(space) => openAddRoom(space)}
+              appearance={places}
+              onEdit={(place) =>
+                openEditPlace({
+                  ...defaultPlace(place.name),
+                  ...places.find((entry) => entry.id === place.id),
+                  id: place.id,
+                })
+              }
+            />
           </nav>
           <div className={styles.sidebarBottom}>
             <button
@@ -1933,7 +1958,24 @@ export function LiquidDashboard({
                     <kbd>⌘ K</kbd>
                   )}
                 </label>
-                <div className={styles.creationActions}>
+                <div
+                  className={styles.creationActions}
+                  role="group"
+                  aria-label="Create inventory"
+                >
+                  {!openedContainer &&
+                    (selectedSpace ||
+                      (storageMode === "sample" &&
+                        places.some(
+                          (place) => place.name === location && !place.parent,
+                        ))) && (
+                      <button
+                        className={styles.addContainer}
+                        onClick={() => openAddRoom()}
+                      >
+                        <Plus /> Add room
+                      </button>
+                    )}
                   <button
                     className={styles.addItem}
                     aria-label="Add item"
@@ -1995,7 +2037,12 @@ export function LiquidDashboard({
                   <>
                     <CaretRight />
                     <button onClick={() => setOpenedContainer(null)}>
-                      {currentContainer?.location_name ?? section}
+                      {selectedLocation
+                        ? locationPath(
+                            selectedLocation,
+                            effectiveLocations,
+                          ).join(" → ")
+                        : (currentContainer?.location_name ?? section)}
                     </button>
                   </>
                 )}
@@ -2046,10 +2093,15 @@ export function LiquidDashboard({
                     }}
                     options={[
                       { value: "all", label: "Location" },
-                      ...locationOptions.map((value) => ({
-                        value,
-                        label: value,
-                      })),
+                      ...(storageMode === "saved"
+                        ? locations.map((place) => ({
+                            value: place.id,
+                            label: locationPath(place, locations).join(" → "),
+                          }))
+                        : locationOptions.map((value) => ({
+                            value,
+                            label: value,
+                          }))),
                     ]}
                   />
                 )}
@@ -2144,7 +2196,7 @@ export function LiquidDashboard({
               briefing={
                 storageMode === "sample" ? sampleBriefing : dashboardBriefing
               }
-              items={items}
+              items={hierarchyItems}
               accountEmail={accountEmail}
               sample={storageMode === "sample"}
               loading={
@@ -2166,8 +2218,9 @@ export function LiquidDashboard({
                 <JarvisChat
                   promptRequest={promptRequest}
                   active={dashboardLanding && !detailsOpen && !mobileNav}
-                  items={items}
+                  items={hierarchyItems}
                   saved={storageMode === "saved"}
+                  locations={effectiveLocations}
                   onApplyChanges={(changes, versions) =>
                     store.applyChanges(changes, versions, locationOptions)
                   }
@@ -2187,23 +2240,99 @@ export function LiquidDashboard({
           </div>
           {!dashboardLanding && (
             <>
+              {!openedContainer &&
+                (selectedSpace ||
+                  (storageMode === "sample" &&
+                    places.some(
+                      (place) => place.name === location && !place.parent,
+                    ))) && (
+                  <section className={styles.roomsSection} aria-label="Rooms">
+                    <h2>Rooms</h2>
+                    <p>
+                      Space → Room (optional) → Container → Item. Items and
+                      containers can also live directly in a space.
+                    </p>
+                    {effectiveLocations.filter(
+                      (room) => room.parent_location_id === selectedSpace?.id,
+                    ).length ? (
+                      <div>
+                        {effectiveLocations
+                          .filter(
+                            (room) =>
+                              room.parent_location_id === selectedSpace?.id,
+                          )
+
+                          .map((room) => (
+                            <div key={room.id}>
+                              <button
+                                onClick={() => navigate(room.name, room.id)}
+                              >
+                                <Folder /> {room.name}
+                              </button>
+                              <button
+                                aria-label={`Edit ${room.name}`}
+                                onClick={() =>
+                                  openEditPlace({
+                                    ...defaultPlace(room.name),
+                                    ...places.find(
+                                      (entry) => entry.id === room.id,
+                                    ),
+                                    id: room.id,
+                                  })
+                                }
+                              >
+                                Edit room
+                              </button>
+                              <button
+                                aria-label={`Delete ${room.name}`}
+                                onClick={() => {
+                                  openEditPlace({
+                                    ...defaultPlace(room.name),
+                                    ...places.find(
+                                      (entry) => entry.id === room.id,
+                                    ),
+                                    id: room.id,
+                                  });
+                                  setDeletingPlace(true);
+                                }}
+                              >
+                                Delete room
+                              </button>
+                            </div>
+                          ))}
+                      </div>
+                    ) : (
+                      <p>
+                        No rooms yet. Add a room, or keep items directly in this
+                        space.
+                      </p>
+                    )}
+                    <button onClick={() => openAddRoom()}>Add room</button>
+                  </section>
+                )}
               <div className={query ? styles.searchLayout : undefined}>
                 <div className={styles.resultsContent}>
                   {spacesLanding && (
                     <SpacesBrowser
                       spaces={managedPlaces}
-                      items={items}
-                      onOpen={(name) => navigate(name, name)}
+                      items={hierarchyItems}
+                      onOpen={(key) =>
+                        navigate(
+                          effectiveLocations.find((place) => place.id === key)
+                            ?.name ?? key,
+                          key,
+                        )
+                      }
                       onAdd={openAddPlace}
                       onEdit={(name) => {
                         const place = managedPlaces.find(
-                          (place) => place.name === name,
+                          (place) => (place.id ?? place.name) === name,
                         );
                         if (place) openEditPlace(place);
                       }}
                       onDelete={(name) => {
                         const place = managedPlaces.find(
-                          (place) => place.name === name,
+                          (place) => (place.id ?? place.name) === name,
                         );
                         if (place) {
                           openEditPlace(place);
@@ -2252,7 +2381,7 @@ export function LiquidDashboard({
                     </div>
                   ) : (
                     <ContainerGrid
-                      items={items}
+                      items={hierarchyItems}
                       visible={
                         query && searchTab === "Containers"
                           ? filtered.filter((item) => item.kind === "container")
@@ -2262,6 +2391,15 @@ export function LiquidDashboard({
                       selectedId={detailsOpen ? selected?.id : undefined}
                       view={query ? "list" : view}
                       opened={openedContainer}
+                      directLocationId={selectedLocation?.id}
+                      emptyScope={
+                        selectedLocation
+                          ? locationPath(
+                              selectedLocation,
+                              effectiveLocations,
+                            ).join(" → ")
+                          : undefined
+                      }
                       onOpen={(id) => {
                         openContainer(id);
                         if (id) {
@@ -2275,11 +2413,7 @@ export function LiquidDashboard({
                         kind === "container" ||
                         location !== "all"
                       }
-                      queryActive={
-                        Boolean(query.trim()) ||
-                        kind !== "all" ||
-                        location !== "all"
-                      }
+                      queryActive={Boolean(query.trim()) || kind !== "all"}
                       onSelect={selectItem}
                       onAddItem={addItem}
                     />
@@ -2305,28 +2439,35 @@ export function LiquidDashboard({
                   </aside>
                 )}
               </div>
-              {filtered.length === 0 && searchTab !== "Locations" && (
-                <div className={styles.emptyState}>
-                  <Cube weight="duotone" />
-                  <strong>
-                    {storageMode === "saved" && !items.length
-                      ? "Your inventory starts here"
-                      : "No items found"}
-                  </strong>
-                  <span>
-                    {storageMode === "saved" && !items.length
-                      ? "Create a place, then add your first item and photo."
-                      : "Try a different search or filter."}
-                  </span>
-                  {storageMode === "saved" &&
-                    !items.length &&
-                    !locations.length && (
-                      <button className={styles.addItem} onClick={openAddPlace}>
-                        Create your first place
-                      </button>
-                    )}
-                </div>
-              )}
+              {filtered.length === 0 &&
+                !selectedLocation &&
+                !openedContainer &&
+                !spacesLanding &&
+                searchTab !== "Locations" && (
+                  <div className={styles.emptyState}>
+                    <Cube weight="duotone" />
+                    <strong>
+                      {storageMode === "saved" && !items.length
+                        ? "Your inventory starts here"
+                        : "No items found"}
+                    </strong>
+                    <span>
+                      {storageMode === "saved" && !items.length
+                        ? "Add a space, then add your first item and photo."
+                        : "Try a different search or filter."}
+                    </span>
+                    {storageMode === "saved" &&
+                      !items.length &&
+                      !locations.length && (
+                        <button
+                          className={styles.addItem}
+                          onClick={openAddPlace}
+                        >
+                          Add space
+                        </button>
+                      )}
+                  </div>
+                )}
               <footer className={styles.libraryFooter}>
                 <span>
                   {
@@ -2341,8 +2482,13 @@ export function LiquidDashboard({
                     ).length
                   }{" "}
                   items
+                  {selectedLocation
+                    ? " in this scope (including descendants)"
+                    : ""}
                 </span>
-                <span role="status">{storeError || notice}</span>
+                <span role={storeError ? "alert" : "status"}>
+                  {storeError || notice}
+                </span>
                 <span className={styles.storageLabel}>
                   <span className={styles.liveDot} />
                   {storageMode === "saved"
@@ -2619,7 +2765,16 @@ export function LiquidDashboard({
                             return;
                           }
                           const name = value.slice("location:".length);
-                          patchSelected({ location_name: name });
+                          if (
+                            effectiveLocations.some(
+                              (place) => place.id === name,
+                            )
+                          )
+                            patchSelected({
+                              location_id: name,
+                              parent_container_id: null,
+                            });
+                          else patchSelected({ location_name: name });
                         }}
                       />
                     </label>
@@ -2876,6 +3031,23 @@ export function LiquidDashboard({
         </div>
       </div>
 
+      {draftItem && (
+        <ItemDraftDialog
+          draft={draftItem}
+          items={hierarchyItems}
+          locations={effectiveLocations}
+          placeNames={locationOptions}
+          onCancel={() => {
+            setDraftItem(null);
+            setTimeout(
+              () =>
+                draftOpener.current?.isConnected && draftOpener.current.focus(),
+              0,
+            );
+          }}
+          onAdd={confirmItemDraft}
+        />
+      )}
       {addingPlace && (
         <div
           className={`${styles.placeOverlay} ${!deletingPlace ? styles.spaceDrawerOverlay : ""}`}
@@ -2923,21 +3095,29 @@ export function LiquidDashboard({
                   <div className={styles.placeDialogHeader}>
                     <div>
                       <span className={styles.dialogEyebrow}>
-                        {editingPlace ? "Edit space" : "New space"}
+                        {editingPlace
+                          ? "Edit space"
+                          : placeParent
+                            ? "New room"
+                            : "New space"}
                       </span>
                       <h2 id="place-dialog-title">
                         {deletingPlace
                           ? `Delete ${editingPlace?.name}?`
                           : editingPlace
                             ? "Edit space"
-                            : "Add space"}
+                            : placeParent
+                              ? "Add room"
+                              : "Add space"}
                       </h2>
                       <p>
                         {deletingPlace
                           ? "This removes only the space. Its items and containers will be kept."
                           : editingPlace
                             ? "Update this space’s name, icon, or color."
-                            : "Give this space a name and a little personality."}
+                            : placeParent
+                              ? `Destination: ${placeParent.name}${placeName.trim() ? ` → ${placeName.trim()}` : ""}. Unsaved until you choose Add room.`
+                              : `Destination: top-level Space${placeName.trim() ? ` → ${placeName.trim()}` : ""}. Unsaved until you choose Add space.`}
                       </p>
                     </div>
                     <button
@@ -2965,10 +3145,14 @@ export function LiquidDashboard({
                         }
                       >
                         <option value="">Choose a space</option>
-                        {locationOptions
-                          .filter((name) => name !== editingPlace?.name)
-                          .map((name) => (
-                            <option key={name}>{name}</option>
+                        {effectiveLocations
+                          .filter((place) => place.id !== editingPlace?.id)
+                          .map((place) => (
+                            <option key={place.id} value={place.id}>
+                              {locationPath(place, effectiveLocations).join(
+                                " → ",
+                              )}
+                            </option>
                           ))}
                       </select>
                     </label>
@@ -3005,7 +3189,7 @@ export function LiquidDashboard({
                         className={styles.placeNameField}
                         htmlFor="place-name"
                       >
-                        <span>Place name</span>
+                        <span>{placeParent ? "Room name" : "Place name"}</span>
                         <input
                           id="place-name"
                           autoFocus
@@ -3133,7 +3317,9 @@ export function LiquidDashboard({
                           ? "Confirm deletion"
                           : editingPlace
                             ? "Save changes"
-                            : "Create place"}
+                            : placeParent
+                              ? "Add room"
+                              : "Add space"}
                     </button>
                   </div>
                 </div>

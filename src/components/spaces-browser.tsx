@@ -15,7 +15,7 @@ import {
 import type { Item } from "@/lib/inventory";
 import styles from "./spaces-browser.module.css";
 
-type Space = { name: string; Icon: Icon; color: string };
+type Space = { id?: string; name: string; Icon: Icon; color: string };
 export function SpacesBrowser({
   spaces,
   items,
@@ -81,8 +81,11 @@ export function SpacesBrowser({
       </div>
       <div className={`${styles.cards} ${view === "list" ? styles.list : ""}`}>
         {visible.map((space) => {
-          const contents = items.filter(
-            (item) => item.location_name === space.name,
+          const contents = items.filter((item) =>
+            space.id
+              ? item.resolved_location_id === space.id ||
+                item.location_ancestor_ids?.includes(space.id)
+              : item.location_name === space.name,
           );
           const containers = contents.filter(
             (item) => item.kind === "container",
@@ -91,14 +94,14 @@ export function SpacesBrowser({
           const SpaceIcon = space.Icon;
           return (
             <article
-              key={space.name}
+              key={space.id ?? space.name}
               className={styles.card}
               style={{ "--space-color": space.color } as CSSProperties}
             >
               <button
                 className={styles.open}
                 aria-label={`Open ${space.name}`}
-                onClick={() => onOpen(space.name)}
+                onClick={() => onOpen(space.id ?? space.name)}
               >
                 <span className={styles.visual}>
                   <SpaceIcon weight="duotone" />
@@ -143,7 +146,7 @@ export function SpacesBrowser({
                       aria-label={`Rename ${space.name}`}
                       onClick={() => {
                         setMenu(null);
-                        onEdit(space.name);
+                        onEdit(space.id ?? space.name);
                       }}
                     >
                       <PencilSimple />
@@ -153,7 +156,7 @@ export function SpacesBrowser({
                       aria-label={`Edit ${space.name}`}
                       onClick={() => {
                         setMenu(null);
-                        onEdit(space.name);
+                        onEdit(space.id ?? space.name);
                       }}
                     >
                       <SlidersHorizontal />
@@ -164,7 +167,7 @@ export function SpacesBrowser({
                       aria-label={`Delete ${space.name}`}
                       onClick={() => {
                         setMenu(null);
-                        onDelete(space.name);
+                        onDelete(space.id ?? space.name);
                       }}
                     >
                       <Trash />
@@ -176,7 +179,7 @@ export function SpacesBrowser({
             </article>
           );
         })}
-        {!search && (
+        {!search && spaces.length > 0 && (
           <button className={styles.addCard} onClick={onAdd}>
             <Plus />
             <span>Add space</span>
@@ -184,7 +187,11 @@ export function SpacesBrowser({
         )}
       </div>
       {visible.length === 0 && (
-        <p className={styles.empty}>No spaces found. Try another name.</p>
+        <p className={styles.empty}>
+          {search
+            ? "No spaces found. Try another name."
+            : "No spaces yet. Choose Add space to organize your first items."}
+        </p>
       )}
       <p className={styles.count}>
         {visible.length} {visible.length === 1 ? "space" : "spaces"}

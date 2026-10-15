@@ -21,6 +21,8 @@ export function ContainerGrid({
   queryActive,
   onSelect,
   onAddItem,
+  directLocationId,
+  emptyScope,
 }: {
   items: VisualItem[];
   visible: Item[];
@@ -33,6 +35,8 @@ export function ContainerGrid({
   queryActive: boolean;
   onSelect: (item: Item) => void;
   onAddItem: (parent?: string) => void;
+  directLocationId?: string;
+  emptyScope?: string;
 }) {
   const current = items.find(
     (item) => item.id === opened && item.kind === "container",
@@ -44,7 +48,12 @@ export function ContainerGrid({
       : showContainers
         ? queryActive
           ? visible
-          : visible.filter((item) => !item.parent_container_id)
+          : visible.filter(
+              (item) =>
+                !item.parent_container_id &&
+                (!directLocationId ||
+                  item.resolved_location_id === directLocationId),
+            )
         : visible.filter((item) => item.kind !== "container"),
     sort,
   );
@@ -71,7 +80,28 @@ export function ContainerGrid({
         className={css.content}
         aria-label={current ? `${current.name} contents` : "Inventory items"}
       >
-        {view === "list" ? (
+        {!rows.length && (current || emptyScope) ? (
+          <div className={styles.emptyState}>
+            <strong>
+              {queryActive
+                ? "No matching items"
+                : `No items directly in ${current?.name ?? emptyScope} yet`}
+            </strong>
+            <span>
+              {queryActive
+                ? "Try a different search or filter."
+                : "Start with an item here. Containers can also be added from the toolbar."}
+            </span>
+            {!queryActive && (
+              <button
+                className={styles.addItem}
+                onClick={() => onAddItem(current?.id)}
+              >
+                Add item
+              </button>
+            )}
+          </div>
+        ) : view === "list" ? (
           <div className={css.tableScroll}>
             <table className={css.table}>
               <thead>

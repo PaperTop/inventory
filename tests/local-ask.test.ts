@@ -88,7 +88,7 @@ it.each([
   { question: "camera", items: [{ ...camera, user_id: "someone-else" }] },
   {
     question: "camera",
-    items: Array.from({ length: 201 }, (_, index) => ({
+    items: Array.from({ length: 5001 }, (_, index) => ({
       ...camera,
       id: String(index),
     })),
@@ -103,7 +103,10 @@ it.each([
 });
 it("bounds the actual request body before parsing", async () => {
   expect(
-    (await handleLocalAsk(request({ question: "x".repeat(256001), items: [] })))
-      .status,
+    (
+      await handleLocalAsk(
+        request({ question: "x".repeat(8_000_001), items: [] }),
+      )
+    ).status,
   ).toBe(413);
 });

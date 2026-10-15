@@ -165,7 +165,7 @@ Cost controls: at most four model turns, four tool calls per turn (at most twelv
 
 ### Local Jarvis demo
 
-Run `npm run dev` and open the dashboard. Without Supabase, each chat request sends the current session's inventory snapshot to `/api/ask/local`, including item edits and container breadcrumbs. This endpoint is same-origin, development-only, limited to 200 records and 256 KB, and does not write or persist inventory. Local sample inventory and chat reset on reload. With a saved Supabase session, `/api/ask` uses the authenticated repository and the same retrieval/answer contract.
+Run `npm run dev` and open the dashboard. Without Supabase, each chat request sends the current session's inventory snapshot to `/api/ask/local`, including item edits, explicit locations and container breadcrumbs. This endpoint is same-origin, development-only, bounded to 5,000 records, 1,000 locations and an 8 MB body; excessive requests fail explicitly rather than silently dropping inventory. It does not write or persist inventory. Local sample inventory and chat reset on reload. With a saved Supabase session, `/api/ask` uses the authenticated repository and the same retrieval/answer contract.
 
 Try “Pack me for camping,” “What can I use to take pictures?” and “Show my camera accessories.” The sample includes a camera, tripod, and SD card. Ask follow-ups such as “Where are those?” or “Remove the camera from that list.” Click a result to open its item details. Camping answers distinguish usable possessions from suggested essentials; product suitability and accessory compatibility still need checking.
 
@@ -198,7 +198,8 @@ To opt into Claude, set `AI_PROVIDER=claude`, `ANTHROPIC_API_KEY`, and `ANTHROPI
 - `items`: one durable possession per row (`quantity = 1`) or a consumable stock with nonnegative decimal quantity and a unit. Durable rows have no reorder threshold. For a spool or battery, use a durable row with flexible remaining-capacity attributes, or a consumable row measured in grams/units, depending on what you track.
 - `container` items are durable folder-like records. A root container belongs to a reusable location; a nested item or container belongs to one parent container. Its effective location and breadcrumb path are derived from the root, so moving a parent moves the visible subtree without rewriting every child.
 - Container cycles, cross-owner parents, non-container parents, occupied-container type changes, and deletion of non-empty containers are rejected by both the application and the database migration.
-- `locations`: reusable owner-specific named locations. A composite foreign key prevents an item from referring to another user's location.
+- `locations`: owner-specific Spaces and optional Rooms in the same table. A Space has no parent; a Room belongs to exactly one root Space. Existing locations remain Spaces until explicitly created as Rooms. Names are unique among siblings, so `Home → Bedroom` and `Cabin → Bedroom` may coexist. Owner-matching foreign keys protect item placement and room parents.
+- Creation starts as a browser draft and writes only when Add submits a valid name and placement. The client keeps one `X-Inventory-Request-Id` UUID per draft; explicit retries with the same key return the same record rather than creating duplicates. A failed response can be uncertain: retain the draft/key and reload saved inventory before retrying. A confirmed insert still returns success if only its subsequent hierarchy read fails.
 - `inventory_observations`: append-only source events with confidence, event identity, observed/received times, base version, and proposed patch. Unique `(user_id, source, source_event_id)` prevents duplicate events. Owner-matching references prevent foreign item observations.
 - `inventory_activity`: owner-scoped audit events created by database triggers for item creation, edits, moves, and deletion. Events capture the owning room, item name, action channel (`user` or `jarvis`), and time at which the mutation occurred. The dashboard does not invent history for records that predate this migration.
 - `inventory_dashboard_visits`: the last dashboard briefing that the user explicitly acknowledged after it rendered. “Since your last visit” is used only when this durable marker exists; first visits show activity recorded in the past 30 days.
@@ -211,17 +212,22 @@ To opt into Claude, set `AI_PROVIDER=claude`, `ANTHROPIC_API_KEY`, and `ANTHROPI
 
 Every production route requires the verified Supabase session cookie. Write requests also require an `Origin` matching the request URL and JSON content type. Request bodies are bounded to 16 KB.
 
-| Method | Route                  | Input / result                                             |
-| ------ | ---------------------- | ---------------------------------------------------------- |
-| GET    | `/api/items?q=charger` | `{ items, limit: 200 }`                                    |
-| POST   | `/api/items`           | Item fields → `{ item }`, 201                              |
-| PUT    | `/api/items/:id`       | Full editable item fields plus `version` → `{ item }`      |
-| DELETE | `/api/items/:id`       | `{ version }` → `{ deleted: true }`                        |
-| GET    | `/api/locations`       | `{ locations }`                                            |
-| POST   | `/api/locations`       | `{ name }` → `{ location }`, 201                           |
-| POST   | `/api/ask`             | `{ question }` → `{ answer, citations, mode, notice? }`    |
-| GET    | `/api/dashboard`       | Per-user activity groups, summary, and grounded suggestion |
-| POST   | `/api/dashboard/visit` | `{ asOf }` → `{ acknowledged: true }`                      |
+| Method | Route                     | Input / result                                                                         |
+| ------ | ------------------------- | -------------------------------------------------------------------------------------- |
+| GET    | `/api/items?q=charger`    | `{ items, limit: 200 }`                                                                |
+| POST   | `/api/items`              | Item fields → `{ item }`, 201                                                          |
+| PUT    | `/api/items/:id`          | Full editable item fields plus `version` → `{ item }`                                  |
+| DELETE | `/api/items/:id`          | `{ version }` → `{ deleted: true }`                                                    |
+| GET    | `/api/locations`          | `{ locations }`                                                                        |
+| POST   | `/api/locations`          | `{ name }` → `{ location }`, 201                                                       |
+| POST   | `/api/ask`                | `{ question }` → `{ answer, citations, mode, notice? }`                                |
+| GET    | `/api/dashboard`          | Per-user activity groups, summary, and grounded suggestion                             |
+| POST   | `/api/dashboard/visit`    | `{ asOf }` → `{ acknowledged: true }`                                                  |
+| GET    | `/api/inventory/contents` | `type=location\|container\|all`, scope `id`, optional `offset` → structured scope page |
+
+Apply `202610130001_rooms_creation.sql` after the existing migrations before deploying this application version. It adds room hierarchy, location versions, sibling name indexes, and idempotent creation RPCs. It preserves existing root locations and inventory; it does not infer room parents from names. A root Space with Rooms cannot be deleted until its Rooms have been removed.
+
+Jarvis uses the complete current account snapshot for its bounded overview/search tools, with one shared snapshot per request. Exact location/container questions such as “Show everything in Home” use structured results independently of the model: a Space includes its direct items, all Rooms, and nested container contents; a container scope includes all descendants. Duplicate names require a full path. Scope pages contain at most 100 records within a 240 KB UTF-8 record budget and report `total`, `offset`, `nextOffset`, and `complete`; load subsequent pages instead of treating model citations as a full list. Send the returned `revision` when continuing; matching inventory or path changes produce a `409` so the query can restart with current records. Model context remains limited to 20 full facts/12,000 characters per retrieval and a compact paged overview. Packing fallbacks use available owned records and label general essentials as checks rather than possessions.
 
 The dashboard endpoints require the same verified session as inventory CRUD. After a dashboard response renders successfully, acknowledge its exact `asOf` value; do not acknowledge loading or failed responses. Suggestions are deterministic and appear only when current items in the same non-empty category span at least two owning spaces. Opening a suggestion starts a read-only Jarvis planning conversation and does not mutate inventory.
 

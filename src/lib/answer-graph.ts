@@ -42,7 +42,7 @@ export const inventoryToolDefinitions = [
       parameters: {
         type: "object",
         properties: {
-          query: { type: "string" },
+          query: { type: "string", maxLength: 200 },
           offset: { type: "integer", minimum: 0, maximum: 1000000 },
         },
         required: ["query"],
@@ -147,10 +147,19 @@ export function createReadOnlyAnswerGraph(
             throw new Error("Inventory overview unavailable.");
           result = await state.reader.overview(offset);
         } else if (call.name === "search_inventory") {
-          const { query, offset = 0 } = searchInput.parse(call.args);
-          result = state.reader.searchPage
-            ? await state.reader.searchPage(query, offset)
-            : inventoryPage(await state.reader.search(query), offset);
+          const parsed = searchInput.safeParse(call.args);
+          if (!parsed.success) {
+            result = {
+              error: "Invalid search arguments. No search was run.",
+              instruction:
+                "Use a query of at most 200 characters with short keywords (up to 16 terms), and an optional integer offset from 0 to 1000000. Split complementary categories into separate short searches within the remaining turn budget.",
+            };
+          } else {
+            const { query, offset = 0 } = parsed.data;
+            result = state.reader.searchPage
+              ? await state.reader.searchPage(query, offset)
+              : inventoryPage(await state.reader.search(query), offset);
+          }
         } else if (call.name === "create_item" && state.reader.prepareChange) {
           const args = createItemArguments.parse(call.args);
           state.reader.prepareChange({ type: "create", ...args });

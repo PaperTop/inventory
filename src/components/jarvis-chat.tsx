@@ -8,7 +8,6 @@ import {
   type FormEvent,
   type ReactNode,
 } from "react";
-import Image from "next/image";
 import {
   ArrowCounterClockwise,
   PaperPlaneRight,
@@ -20,6 +19,8 @@ import { askApi, askLocalApi } from "@/lib/browser-api";
 import type { VisualItem } from "./use-inventory-store";
 import type { ChangeOutcome, InventoryChange } from "@/lib/inventory-changes";
 import styles from "./inventory-dashboard.module.css";
+import type { Location } from "@/lib/inventory";
+import { JarvisInventoryResults } from "./jarvis-inventory-results";
 
 type Exchange = { question: string; result?: AskResult; source: string };
 
@@ -31,6 +32,7 @@ export function JarvisChat({
   promptRequest,
   active = true,
   children,
+  locations = [],
 }: {
   items: VisualItem[];
   saved: boolean;
@@ -47,6 +49,7 @@ export function JarvisChat({
   };
   active?: boolean;
   children?: ReactNode;
+  locations?: Location[];
 }) {
   const [prompt, setPrompt] = useState("");
   const [exchanges, setExchanges] = useState<Exchange[]>([]);
@@ -125,7 +128,7 @@ export function JarvisChat({
     try {
       result = saved
         ? await askApi(question, history)
-        : await askLocalApi(question, facts, history);
+        : await askLocalApi(question, facts, history, locations);
     } catch {
       result = await askInventory(question, {
         search: async (query) => searchFacts(facts, query),
@@ -232,43 +235,13 @@ export function JarvisChat({
                   {turn.result.mode === "ai" ? "AI answer" : "Search results"}
                 </small>
                 <p className={styles.assistantAnswer}>{turn.result.answer}</p>
-                <div className={styles.assistantResults}>
-                  {turn.result.citations.map((item) => {
-                    const current = items.find((row) => row.id === item.id);
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        aria-label={`Open ${item.name}`}
-                        disabled={!current}
-                        onClick={() => onSelect(item.id)}
-                      >
-                        {current && (
-                          <Image
-                            src={current.image}
-                            alt=""
-                            width={40}
-                            height={40}
-                            unoptimized
-                          />
-                        )}
-                        <span>
-                          <strong>{item.name}</strong>
-                          <span>
-                            {item.quantity} {item.unit} ·{" "}
-                            {item.location_name || "No location"}
-                          </span>
-                          <span>
-                            {item.status}
-                            {item.condition === "poor"
-                              ? " · poor condition"
-                              : ""}
-                          </span>
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
+                <JarvisInventoryResults
+                  result={turn.result}
+                  items={items}
+                  locations={locations}
+                  saved={saved}
+                  onSelect={onSelect}
+                />
                 {turn.result.notice && (
                   <p className={styles.assistantNotice}>{turn.result.notice}</p>
                 )}

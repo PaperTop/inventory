@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import {
+  act,
   cleanup,
   render,
   screen,
@@ -122,25 +123,40 @@ it.each([false, true])(
       screen.getByRole("button", { name: "More filters" }),
     ).toHaveAttribute("aria-expanded", "false");
     await user.click(add);
+    const draft = screen.getByRole("dialog", { name: "Add container" });
+    expect(create).not.toHaveBeenCalled();
+    expect(
+      screen.queryByRole("button", { name: "Open Archive box" }),
+    ).toBeNull();
+    await user.type(
+      within(draft).getByRole("textbox", { name: "Name" }),
+      "Archive box",
+    );
+    await user.click(
+      within(draft).getByRole("button", { name: "Add container" }),
+    );
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({
-        name: "New container",
+        name: "Archive box",
         kind: "container",
         location_id: nested ? null : targetRoom.id,
         parent_container_id: nested ? cabinet.id : null,
       }),
       undefined,
+      expect.any(String),
     );
     const name = await screen.findByRole("textbox", { name: "Item name" });
+    expect(name).toHaveValue("Archive box");
+    await user.click(screen.getByRole("button", { name: "Edit" }));
     await user.clear(name);
-    await user.type(name, "Archive box");
+    await user.type(name, "Labeled archive box");
     await user.click(screen.getByRole("button", { name: "Done" }));
     await waitFor(() =>
       expect(update).toHaveBeenCalledWith(
         createdId,
         1,
         expect.objectContaining({
-          name: "Archive box",
+          name: "Labeled archive box",
           kind: "container",
           location_id: nested ? null : targetRoom.id,
           parent_container_id: nested ? cabinet.id : null,
@@ -153,15 +169,18 @@ it.each([false, true])(
     await user.click(
       screen.getByRole("button", { name: "Close item details" }),
     );
-    await user.click(screen.getByRole("button", { name: "Open Archive box" }));
+    await user.click(
+      screen.getByRole("button", { name: "Open Labeled archive box" }),
+    );
     expect(
-      screen.getByRole("region", { name: "Archive box contents" }),
+      screen.getByRole("region", { name: "Labeled archive box contents" }),
     ).toBeVisible();
     const breadcrumb = screen.getByRole("navigation", {
       name: "Inventory breadcrumb",
     });
     expect(breadcrumb).toHaveTextContent(targetRoom.name);
-    if (nested) expect(breadcrumb).toHaveTextContent("CabinetArchive box");
+    if (nested)
+      expect(breadcrumb).toHaveTextContent("CabinetLabeled archive box");
     expect(create).toHaveBeenCalledOnce();
   },
 );
@@ -182,7 +201,7 @@ it("offers the space prerequisite instead of creating an unplaced root container
   expect(
     screen.queryByRole("complementary", { name: "Item details" }),
   ).toBeNull();
-  expect(screen.getByRole("button", { name: "Add place" })).toBeVisible();
+  expect(screen.getAllByRole("button", { name: "Add space" })[0]).toBeVisible();
 });
 
 it("reports a failed saved create without opening or displaying a phantom container", async () => {
@@ -198,14 +217,129 @@ it("reports a failed saved create without opening or displaying a phantom contai
     ).getByRole("button", { name: "Garage" }),
   );
   await user.click(screen.getByRole("button", { name: "Add container" }));
-  const feedback = await screen.findByRole("status");
-  expect(feedback).toHaveTextContent("Database unavailable");
-  expect(feedback).toHaveTextContent(/not confirmed/i);
+  const draft = screen.getByRole("dialog", { name: "Add container" });
+  await user.type(
+    within(draft).getByRole("textbox", { name: "Name" }),
+    "Retry box",
+  );
+  await user.click(
+    within(draft).getByRole("button", { name: "Add container" }),
+  );
+  const feedback = await within(draft).findByRole("alert");
+  expect(feedback).toHaveTextContent(/could not confirm/i);
   expect(create).toHaveBeenCalledOnce();
+  expect(within(draft).getByRole("textbox", { name: "Name" })).toHaveValue(
+    "Retry box",
+  );
+  expect(within(draft).getByRole("alert")).toHaveTextContent(/draft is kept/i);
   expect(
-    screen.queryByRole("button", { name: "Open New container" }),
+    screen.queryByRole("button", { name: "Open Retry box", hidden: true }),
   ).toBeNull();
   expect(
     screen.queryByRole("complementary", { name: "Item details" }),
   ).toBeNull();
+  const requestId = create.mock.calls[0][2];
+  expect(requestId).toEqual(expect.any(String));
+  create.mockResolvedValue({
+    ...cabinet,
+    id: requestId!,
+    name: "Retry box",
+    location_id: rooms[1].id,
+    location_name: rooms[1].name,
+  });
+  await user.click(
+    within(draft).getByRole("button", { name: "Add container" }),
+  );
+  expect(await screen.findByRole("textbox", { name: "Item name" })).toHaveValue(
+    "Retry box",
+  );
+  expect(create).toHaveBeenCalledTimes(2);
+  expect(create.mock.calls[1][2]).toBe(requestId);
+});
+
+it.each(["item", "container"])(
+  "keeps an invalid %s draft unsaved and restores the opener on Escape",
+  async (kind) => {
+    mockBriefing();
+    const user = userEvent.setup();
+    const create = vi.spyOn(apiRepository, "create");
+    render(
+      <LiquidDashboard
+        savedInventory={{ items: [cabinet], locations: rooms }}
+      />,
+    );
+    await user.click(
+      within(
+        screen.getByRole("navigation", { name: "Inventory locations" }),
+      ).getByRole("button", { name: "Garage" }),
+    );
+    const opener = within(
+      screen.getByRole("group", { name: "Create inventory" }),
+    ).getByRole("button", { name: `Add ${kind}` });
+    await user.click(opener);
+    const draft = screen.getByRole("dialog", { name: `Add ${kind}` });
+    await user.type(
+      within(draft).getByRole("textbox", { name: "Name" }),
+      "   ",
+    );
+    await user.click(
+      within(draft).getByRole("button", { name: `Add ${kind}` }),
+    );
+    expect(within(draft).getByRole("alert")).toHaveTextContent(
+      /name is required/i,
+    );
+    expect(create).not.toHaveBeenCalled();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: `Add ${kind}` })).toBeNull();
+    expect(opener).toHaveFocus();
+    expect(create).not.toHaveBeenCalled();
+  },
+);
+
+it("commits a pending draft once and prevents Cancel from discarding an uncertain save", async () => {
+  mockBriefing();
+  const user = userEvent.setup();
+  let finish!: (row: Item) => void;
+  const create = vi.spyOn(apiRepository, "create").mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  render(
+    <LiquidDashboard savedInventory={{ items: [cabinet], locations: rooms }} />,
+  );
+  await user.click(
+    within(
+      screen.getByRole("navigation", { name: "Inventory locations" }),
+    ).getByRole("button", { name: "Garage" }),
+  );
+  await user.click(screen.getByRole("button", { name: "Add container" }));
+  const draft = screen.getByRole("dialog", { name: "Add container" });
+  await user.type(
+    within(draft).getByRole("textbox", { name: "Name" }),
+    "Pending box",
+  );
+  await user.dblClick(
+    within(draft).getByRole("button", { name: "Add container" }),
+  );
+  expect(create).toHaveBeenCalledOnce();
+  expect(within(draft).getByRole("button", { name: "Cancel" })).toBeDisabled();
+  await user.keyboard("{Escape}");
+  expect(draft).toBeVisible();
+  expect(screen.queryByRole("button", { name: "Open Pending box" })).toBeNull();
+  await act(async () =>
+    finish({
+      ...cabinet,
+      name: "Pending box",
+      id: create.mock.calls[0][2]!,
+      location_id: rooms[1].id,
+      location_name: rooms[1].name,
+    }),
+  );
+  expect(await screen.findByRole("textbox", { name: "Item name" })).toHaveValue(
+    "Pending box",
+  );
+  expect(screen.queryByRole("dialog", { name: "Add container" })).toBeNull();
+  expect(create).toHaveBeenCalledOnce();
 });

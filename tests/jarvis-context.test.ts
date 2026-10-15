@@ -110,7 +110,7 @@ it("pages past the first 20 matches and validates citations from later pages", a
 it("does not allow a catalogue-only record to be cited as inspected evidence", async () => {
   let browsed = false;
   const result = await askInventory(
-    "Prepare for a trip",
+    "Find desk furniture",
     {
       search: async (q) => searchFacts([fact("contacts", "Contact lenses")], q),
     },

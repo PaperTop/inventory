@@ -23,7 +23,11 @@ export function filterInventory(
       options.kind === "all" ||
       (options.kind === "low" ? isLowStock(item) : item.kind === options.kind);
     const locationMatches =
-      options.location === "all" || item.location_name === options.location;
+      options.location === "all" ||
+      item.location_name === options.location ||
+      item.resolved_location_id === options.location ||
+      item.location_id === options.location ||
+      item.location_ancestor_ids?.includes(options.location);
     return kindMatches && locationMatches;
   });
 

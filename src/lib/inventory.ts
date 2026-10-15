@@ -95,8 +95,15 @@ export type Item = Omit<ItemInput, "parent_container_id"> & {
   location_path?: string[];
   ancestor_ids?: string[];
   resolved_location_id?: string | null;
+  location_ancestor_ids?: string[];
 };
-export type Location = { id: string; user_id: string; name: string };
+export type Location = {
+  id: string;
+  user_id: string;
+  name: string;
+  parent_location_id?: string | null;
+  version?: number;
+};
 export const isLowStock = (i: Item) =>
   i.kind === "consumable" &&
   i.reorder_threshold !== null &&

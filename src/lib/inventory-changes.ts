@@ -6,6 +6,7 @@ import {
   type Location,
 } from "./inventory";
 import { validatePlacement, resolveHierarchy } from "./containers";
+import { resolveScopeName, scopeChoices } from "./inventory-scope";
 
 const editableFields = {
   name: z.string().trim().min(1).max(160).optional(),
@@ -148,22 +149,29 @@ export function prepareInventoryChanges(
     if (location !== undefined) {
       const sameName = (name: string) =>
         name.toLowerCase() === location.toLowerCase();
-      const containers = working.filter(
-        (item) => item.kind === "container" && sameName(item.name),
+      const matches = resolveScopeName(
+        location,
+        scopeChoices(working, locations),
       );
-      const places = [
-        ...new Set([...placeNames, ...locations.map((place) => place.name)]),
-      ].filter(sameName);
-      if (containers.length + places.length !== 1)
+      const legacyPlaces = [...new Set(placeNames)].filter(
+        (name) =>
+          sameName(name) && !locations.some((place) => sameName(place.name)),
+      );
+      if (matches.length + legacyPlaces.length !== 1)
         throw new Error(
           `The location “${location}” is missing or ambiguous. Choose an existing place or a uniquely named container.`,
         );
-      const parent = containers[0];
+      const parent =
+        matches[0]?.type === "container"
+          ? working.find((item) => item.id === matches[0].id)
+          : undefined;
+      const place =
+        matches[0]?.type === "location"
+          ? locations.find((place) => place.id === matches[0].id)
+          : undefined;
       parent_container_id = parent?.id ?? null;
-      location_id = parent
-        ? null
-        : (locations.find((place) => sameName(place.name))?.id ?? null);
-      location_name = parent?.location_name ?? places[0];
+      location_id = parent ? null : (place?.id ?? null);
+      location_name = parent?.location_name ?? place?.name ?? legacyPlaces[0];
     }
     const now = new Date().toISOString();
     const next: Item = {

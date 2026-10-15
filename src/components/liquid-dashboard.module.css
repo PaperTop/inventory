@@ -386,6 +386,32 @@
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+  flex-wrap: wrap;
+}
+.roomsSection {
+  margin-bottom: 24px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.roomsSection p {
+  color: var(--muted);
+  margin: 8px 0;
+}
+.roomsSection div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.roomsSection button,
+.roomAdd {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #19384f;
+  color: #d9eafa;
 }
 .filterButton {
   display: grid;
@@ -609,7 +635,10 @@
   margin-top: 20px;
 }
 .libraryFooter > :nth-child(2) {
-  color: #6f8da4;
+  color: #98b3ca;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  pointer-events: none;
 }
 .storageLabel {
   margin-left: auto;
@@ -1156,6 +1185,39 @@
   padding: 70px 20px;
   text-align: center;
   color: var(--muted);
+}
+.draftHint {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.draftFields {
+  display: grid;
+  gap: 16px;
+  border: 0;
+  padding: 20px 0 0;
+  min-width: 0;
+}
+.draftFields label {
+  display: grid;
+  gap: 6px;
+  color: #c4d9ec;
+}
+.draftFields input,
+.draftFields select,
+.draftFields textarea {
+  min-width: 0;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #385773;
+  border-radius: 6px;
+  background: #0c2031;
+  color: var(--ink);
+  font-size: 16px;
+}
+.draftFields textarea {
+  min-height: 80px;
+  resize: vertical;
 }
 .placeOverlay {
   position: fixed;

@@ -246,7 +246,11 @@ export function useInventoryStore(
       return result;
     });
   }
-  async function create(item: VisualItem, actor?: "jarvis") {
+  async function create(
+    item: VisualItem,
+    actor?: "jarvis",
+    requestId?: string,
+  ) {
     if (!mounted.current) return;
     try {
       validatePlacement(item, current.current);
@@ -260,7 +264,7 @@ export function useInventoryStore(
     }
     return run(async (ensureActive) => {
       const created = visualItem(
-        await apiRepository.create(inputOf(item), actor),
+        await apiRepository.create(inputOf(item), actor, requestId),
       );
       ensureActive();
       saved.current.set(created.id, created);

@@ -20,6 +20,47 @@ const row: Item = {
   updated_at: "2026-09-15",
 };
 const versions = { camera: 2 };
+it("requires a full path before Jarvis can place an item in duplicate rooms", () => {
+  const places = [
+    { id: "home", user_id: "owner", name: "Home" },
+    { id: "cabin", user_id: "owner", name: "Cabin" },
+    {
+      id: "bed1",
+      user_id: "owner",
+      name: "Bedroom",
+      parent_location_id: "home",
+    },
+    {
+      id: "bed2",
+      user_id: "owner",
+      name: "Bedroom",
+      parent_location_id: "cabin",
+    },
+  ];
+  expect(() =>
+    prepareInventoryChanges(
+      [{ type: "update", id: "camera", changes: { location: "Bedroom" } }],
+      [row],
+      places,
+      [],
+      versions,
+    ),
+  ).toThrow(/ambiguous/i);
+  const result = prepareInventoryChanges(
+    [
+      {
+        type: "update",
+        id: "camera",
+        changes: { location: "Cabin → Bedroom" },
+      },
+    ],
+    [row],
+    places,
+    [],
+    versions,
+  );
+  expect(result[0].item.location_id).toBe("bed2");
+});
 it("keeps repeated packing-list revisions separate from inventory edits", () => {
   const history = [
     { question: "Pack me for camping", answer: "Your packing list." },

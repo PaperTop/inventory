@@ -45,7 +45,7 @@ describe("dashboard briefing", () => {
       itemIds: ["Camera", "Tripod"],
       roomNames: ["Bedroom", "Living Room"],
     });
-    expect(suggestion?.text).toMatch(/photography.*2 spaces/i);
+    expect(suggestion?.text).toMatch(/photography.*2 locations/i);
     expect(suggestion?.prompt).toMatch(/read-only plan.*do not make changes/i);
   });
 
@@ -62,5 +62,21 @@ describe("dashboard briefing", () => {
         item("Tripod", "", "room-2", "Living Room"),
       ]),
     ).toBeNull();
+  });
+  it("distinguishes equal room names by identity and full physical paths", () => {
+    const suggestion = groundedDashboardSuggestion([
+      item("Camera", "Photography", "bed-1", "Bedroom", {
+        location_ancestor_ids: ["home"],
+        location_path: ["Home", "Bedroom", "Camera"],
+      }),
+      item("Tripod", "Photography", "bed-2", "Bedroom", {
+        location_ancestor_ids: ["cabin"],
+        location_path: ["Cabin", "Bedroom", "Tripod"],
+      }),
+    ]);
+    expect(suggestion?.roomNames).toEqual([
+      "Home → Bedroom",
+      "Cabin → Bedroom",
+    ]);
   });
 });

@@ -27,6 +27,25 @@ afterEach(() => {
 });
 
 describe("navy workspace navigation", () => {
+  it("keeps room parent identities when their sample space is renamed", async () => {
+    const user = userEvent.setup();
+    render(<LiquidDashboard />);
+    await user.click(screen.getByRole("button", { name: "Spaces" }));
+    await user.click(screen.getByRole("button", { name: "Actions for Home" }));
+    await user.click(screen.getByRole("button", { name: "Rename Home" }));
+    await user.clear(screen.getByLabelText("Place name"));
+    await user.type(screen.getByLabelText("Place name"), "House");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    await user.click(screen.getByRole("button", { name: "Open House" }));
+    const rooms = screen.getByRole("region", { name: "Rooms" });
+    expect(
+      within(rooms).getByRole("button", { name: "Bedroom" }),
+    ).toBeVisible();
+    expect(
+      within(rooms).getByRole("button", { name: "Living Room" }),
+    ).toBeVisible();
+  });
+
   it("highlights only the open container through cards, tree and breadcrumbs, then clears it on leaving", async () => {
     const user = userEvent.setup();
     render(<LiquidDashboard />);
@@ -122,9 +141,10 @@ describe("navy workspace navigation", () => {
     expect(home).toHaveAttribute("aria-expanded", "false");
     expect(home).toHaveAttribute("aria-pressed", "true");
     expect(screen.queryByRole("button", { name: "View Backpack" })).toBeNull();
+    expect(screen.getByRole("button", { name: "View Wallet" })).toBeVisible();
     expect(
-      screen.getByRole("button", { name: "View Travel tripod" }),
-    ).toBeVisible();
+      screen.queryByRole("button", { name: "View Travel tripod" }),
+    ).toBeNull();
     await user.click(home.querySelector("svg:last-child")!);
     expect(within(nav).getByRole("button", { name: "Bedroom" })).toBeVisible();
     const bedroom = within(nav).getByRole("button", { name: "Bedroom" });
@@ -151,7 +171,7 @@ describe("navy workspace navigation", () => {
     expect(college).toHaveAttribute("aria-expanded", "true");
     expect(college).toHaveAttribute("aria-pressed", "true");
     expect(
-      college.closest(`.${styles.spaceBranchRow}`)?.nextElementSibling,
+      college.closest(`.${styles.spaceBranchRow}`)?.parentElement,
     ).toHaveTextContent("No containers");
     expect(screen.getByRole("button", { name: "View Backpack" })).toBeVisible();
     expect(
@@ -175,20 +195,20 @@ describe("navy workspace navigation", () => {
     const user = userEvent.setup();
     render(<LiquidDashboard />);
     await user.click(screen.getByRole("button", { name: "Spaces" }));
-    await user.click(screen.getByLabelText("Actions for Bedroom"));
+    await user.click(screen.getByRole("button", { name: "Open Home" }));
     await user.click(screen.getByRole("button", { name: "Edit Bedroom" }));
-    await user.clear(screen.getByLabelText("Place name"));
-    await user.type(screen.getByLabelText("Place name"), "Office");
+    await user.clear(screen.getByLabelText("Room name"));
+    await user.type(screen.getByLabelText("Room name"), "Office");
     await user.click(screen.getByRole("button", { name: "Save changes" }));
-    expect(screen.getByLabelText("Actions for Office")).toBeVisible();
-    expect(screen.queryByLabelText("Actions for Bedroom")).toBeNull();
+    expect(screen.getByRole("button", { name: "Edit Office" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Edit Bedroom" })).toBeNull();
   });
 
   it("confirms deletion and keeps nested contents in the chosen destination", async () => {
     const user = userEvent.setup();
     render(<LiquidDashboard />);
     await user.click(screen.getByRole("button", { name: "Spaces" }));
-    await user.click(screen.getByLabelText("Actions for Bedroom"));
+    await user.click(screen.getByRole("button", { name: "Open Home" }));
     await user.click(screen.getByRole("button", { name: "Delete Bedroom" }));
     await user.selectOptions(screen.getByLabelText("Move items to"), "College");
     await user.click(screen.getByRole("button", { name: "Confirm deletion" }));
@@ -554,7 +574,7 @@ describe("liquid dashboard interactions", () => {
   it("creates a place in a dialog with its chosen icon and highlight", async () => {
     const user = userEvent.setup();
     render(<LiquidDashboard />);
-    await user.click(screen.getByRole("button", { name: "Add place" }));
+    await user.click(screen.getByRole("button", { name: "Add space" }));
     const dialog = screen.getByRole("dialog", { name: "Add space" });
     await user.click(
       within(dialog).getByRole("button", { name: "Change icon" }),
@@ -562,16 +582,14 @@ describe("liquid dashboard interactions", () => {
     await user.type(within(dialog).getByLabelText("Place name"), "Studio");
     await user.click(within(dialog).getByRole("radio", { name: "Camera" }));
     await user.click(within(dialog).getByRole("radio", { name: "Rose" }));
-    await user.click(
-      within(dialog).getByRole("button", { name: "Create place" }),
-    );
+    await user.click(within(dialog).getByRole("button", { name: "Add space" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     const place = within(
       screen.getByRole("navigation", { name: "Inventory locations" }),
     ).getByRole("button", { name: "Studio" });
     expect(place).toHaveAttribute("data-place-icon", "Camera");
     expect(place).toHaveStyle({ "--place-color": "#f59ab8" });
-    expect(screen.getByRole("button", { name: "Add place" })).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Add space" })).toHaveFocus();
   });
 
   it("supports keyboard selection and dismissing the glass filter", async () => {
@@ -719,19 +737,19 @@ describe("liquid dashboard interactions", () => {
   it("adds a place from the left rail without creating an item", async () => {
     const user = userEvent.setup();
     render(<LiquidDashboard />);
-    await user.click(screen.getByRole("button", { name: "Add place" }));
+    await user.click(screen.getByRole("button", { name: "Add space" }));
     await user.type(
       screen.getByRole("textbox", { name: "Place name" }),
       "Garage",
     );
-    await user.click(screen.getByRole("button", { name: "Create place" }));
+    await user.click(screen.getByRole("button", { name: "Add space" }));
     const navigation = screen.getByRole("navigation", {
       name: "Inventory locations",
     });
     expect(
       within(navigation).getByRole("button", { name: "Garage" }),
     ).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByText("0 items")).toBeVisible();
+    expect(screen.getByText(/0 items in this scope/)).toBeVisible();
     await user.click(screen.getByRole("button", { name: "All items" }));
     expect(
       screen.queryByRole("button", { name: "View New item" }),
@@ -745,23 +763,26 @@ describe("liquid dashboard interactions", () => {
     expect(screen.getByRole("button", { name: "View Backpack" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Add item" }));
     expect(
-      screen.getByRole("combobox", { name: "Item location" }),
-    ).toHaveTextContent("Garage");
+      within(screen.getByRole("dialog", { name: "Add item" })).getByRole(
+        "option",
+        { name: "Garage", selected: true },
+      ),
+    ).toBeVisible();
   });
 
   it("rejects blank and duplicate places and allows cancelling", async () => {
     const user = userEvent.setup();
     render(<LiquidDashboard />);
-    await user.click(screen.getByRole("button", { name: "Add place" }));
+    await user.click(screen.getByRole("button", { name: "Add space" }));
     const name = screen.getByRole("textbox", { name: "Place name" });
     await user.type(name, "   ");
-    await user.click(screen.getByRole("button", { name: "Create place" }));
+    await user.click(screen.getByRole("button", { name: "Add space" }));
     expect(screen.getByRole("alert")).toHaveTextContent(
       "Place name is required",
     );
     await user.clear(name);
     await user.type(name, " college ");
-    await user.click(screen.getByRole("button", { name: "Create place" }));
+    await user.click(screen.getByRole("button", { name: "Add space" }));
     expect(screen.getByRole("alert")).toHaveTextContent(
       "That place already exists",
     );
@@ -776,12 +797,12 @@ describe("liquid dashboard interactions", () => {
   it("opens a custom place editor on double-click and saves its fields", async () => {
     const user = userEvent.setup();
     render(<LiquidDashboard />);
-    await user.click(screen.getByRole("button", { name: "Add place" }));
+    await user.click(screen.getByRole("button", { name: "Add space" }));
     await user.type(
       screen.getByRole("textbox", { name: "Place name" }),
       "Studio",
     );
-    await user.click(screen.getByRole("button", { name: "Create place" }));
+    await user.click(screen.getByRole("button", { name: "Add space" }));
 
     const navigation = screen.getByRole("navigation", {
       name: "Inventory locations",
@@ -813,12 +834,12 @@ describe("liquid dashboard interactions", () => {
   it("deletes a custom place from its editor", async () => {
     const user = userEvent.setup();
     render(<LiquidDashboard />);
-    await user.click(screen.getByRole("button", { name: "Add place" }));
+    await user.click(screen.getByRole("button", { name: "Add space" }));
     await user.type(
       screen.getByRole("textbox", { name: "Place name" }),
       "Studio",
     );
-    await user.click(screen.getByRole("button", { name: "Create place" }));
+    await user.click(screen.getByRole("button", { name: "Add space" }));
 
     const navigation = screen.getByRole("navigation", {
       name: "Inventory locations",
@@ -1008,9 +1029,11 @@ describe("liquid dashboard interactions", () => {
       name: "Item location",
     });
     await user.click(destination);
-    await user.click(screen.getByRole("option", { name: "Bedroom → Cabinet" }));
+    await user.click(
+      screen.getByRole("option", { name: "Home → Bedroom → Cabinet" }),
+    );
 
-    expect(destination).toHaveTextContent("Bedroom → Cabinet");
+    expect(destination).toHaveTextContent("Home → Bedroom → Cabinet");
     await user.click(
       screen.getByRole("button", { name: "Close item details" }),
     );
@@ -1028,7 +1051,13 @@ describe("liquid dashboard interactions", () => {
     render(<LiquidDashboard />);
     expect(screen.queryByRole("button", { name: "Add container" })).toBeNull();
     await user.click(screen.getByRole("button", { name: "Spaces" }));
-    await user.click(screen.getByRole("button", { name: "Open Bedroom" }));
+    await user.click(screen.getByRole("button", { name: "Open Home" }));
+    await user.click(
+      within(screen.getByRole("region", { name: "Rooms" })).getByRole(
+        "button",
+        { name: "Bedroom" },
+      ),
+    );
     expect(
       screen.getByRole("button", { name: "More filters" }),
     ).toHaveAttribute("aria-expanded", "false");
@@ -1039,14 +1068,20 @@ describe("liquid dashboard interactions", () => {
       screen.getAllByRole("button", { name: "Add container" }),
     ).toHaveLength(1);
     await user.click(create);
+    const draft = screen.getByRole("dialog", { name: "Add container" });
     expect(
-      screen.getByRole("combobox", { name: "Item location" }),
-    ).toHaveTextContent("Bedroom");
-    const name = screen.getByRole("textbox", { name: "Item name" });
-    await user.clear(name);
-    await user.type(name, "Packing box");
-    await user.click(screen.getByRole("button", { name: "Done" }));
-    expect(screen.getByRole("button", { name: "Edit" })).toBeVisible();
+      within(draft).getByRole("combobox", { name: "Location" }),
+    ).toHaveValue("location:sample-location-1");
+    expect(within(draft).getByRole("textbox", { name: "Name" })).toHaveValue(
+      "",
+    );
+    await user.type(
+      within(draft).getByRole("textbox", { name: "Name" }),
+      "Packing box",
+    );
+    await user.click(
+      within(draft).getByRole("button", { name: "Add container" }),
+    );
     await user.click(
       screen.getByRole("button", { name: "Close item details" }),
     );
@@ -1063,17 +1098,26 @@ describe("liquid dashboard interactions", () => {
     await user.click(screen.getByRole("button", { name: "Open Cabinet" }));
     await user.click(screen.getByRole("button", { name: "Add container" }));
 
+    const draft = screen.getByRole("dialog", { name: "Add container" });
     expect(
-      screen.getByRole("button", { name: "Open New container" }),
-    ).toBeVisible();
-    expect(screen.getByRole("textbox", { name: "Item name" })).toHaveValue(
-      "New container",
+      screen.queryByRole("button", { name: "Open Nested box" }),
+    ).toBeNull();
+    expect(
+      within(draft).getByRole("combobox", { name: "Location" }),
+    ).toHaveValue("container:cabinet");
+    await user.type(
+      within(draft).getByRole("textbox", { name: "Name" }),
+      "Nested box",
     );
     await user.click(
-      screen.getByRole("button", { name: "Open New container" }),
+      within(draft).getByRole("button", { name: "Add container" }),
     );
+    await user.click(
+      screen.getByRole("button", { name: "Close item details" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Open Nested box" }));
     expect(
-      screen.getByRole("region", { name: "New container contents" }),
+      screen.getByRole("region", { name: "Nested box contents" }),
     ).toBeVisible();
   });
 });

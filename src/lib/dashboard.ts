@@ -49,7 +49,8 @@ export function groundedDashboardSuggestion(
   const eligible = items.filter(
     (item) =>
       item.kind !== "container" &&
-      item.status !== "disposed" &&
+      ["active", "stored"].includes(item.status) &&
+      item.quantity > 0 &&
       item.category.trim() &&
       item.resolved_location_id &&
       item.location_name,
@@ -64,8 +65,17 @@ export function groundedDashboardSuggestion(
       key,
       rows,
       roomNames: [
-        ...new Set(rows.map((row) => row.location_name).filter(Boolean)),
-      ] as string[],
+        ...new Map(
+          rows.map((row) => [
+            row.resolved_location_id,
+            row.location_ancestor_ids && row.location_path
+              ? row.location_path
+                  .slice(0, row.location_ancestor_ids.length + 1)
+                  .join(" → ")
+              : row.location_name!,
+          ]),
+        ).values(),
+      ],
     }))
     .filter((group) => group.rows.length >= 2 && group.roomNames.length >= 2)
     .sort(
@@ -78,7 +88,7 @@ export function groundedDashboardSuggestion(
   const category = candidate.rows[0].category.trim();
   return {
     id: `split-category:${candidate.key}`,
-    text: `Jarvis noticed items in ${category} are stored in ${candidate.roomNames.length} spaces.`,
+    text: `Jarvis noticed items in ${category} span ${candidate.roomNames.length} locations.`,
     prompt: `Help me review how items in my ${category} category are organized across ${candidate.roomNames.join(" and ")}. Start with a read-only plan and do not make changes.`,
     itemIds: candidate.rows.map((row) => row.id),
     roomNames: candidate.roomNames,

@@ -6,8 +6,16 @@ import {
   type AnswerProvider,
 } from "./ask";
 import { searchFacts } from "./inventory-search";
-import { itemInput, itemUpdate } from "./inventory";
+import {
+  itemInput,
+  itemUpdate,
+  searchInventory,
+  type Item,
+  type Location,
+} from "./inventory";
+import { resolveHierarchy } from "./containers";
 import type { ActivityActor } from "./dashboard";
+import { inventoryContents, InventoryScopeChanged } from "./inventory-scope";
 import {
   authorize,
   HttpError,
@@ -36,6 +44,7 @@ export function handleItems(request: Request, context: RequestContext | null) {
           item: await repository.create(
             itemInput.parse(await readBody(request)),
             mutationActor(request),
+            creationRequestId(request),
           ),
         },
         201,
@@ -79,6 +88,55 @@ function mutationActor(request: Request): ActivityActor {
   if (actor === null || actor === "user") return "user";
   if (actor === "jarvis") return "jarvis";
   throw new HttpError(400, "Invalid inventory activity actor.");
+}
+
+function creationRequestId(request: Request) {
+  const key = request.headers.get("x-inventory-request-id");
+  return key === null ? undefined : z.uuid().parse(key);
+}
+
+export function handleInventoryContents(
+  request: Request,
+  context: RequestContext | null,
+) {
+  return safely(async () => {
+    const { repository } = authorize(request, context);
+    if (request.method !== "GET")
+      throw new HttpError(405, "Method not allowed.");
+    const params = new URL(request.url).searchParams;
+    const type = z
+      .enum(["location", "container", "all"])
+      .parse(params.get("type"));
+    const id = type === "all" ? undefined : z.uuid().parse(params.get("id"));
+    const offset = z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(1_000_000_000)
+      .parse(params.get("offset") ?? 0);
+    const revision = params.has("revision")
+      ? z
+          .string()
+          .regex(/^[0-9a-f]{16}$/)
+          .parse(params.get("revision"))
+      : undefined;
+    const [items, locations] = await Promise.all([
+      repository.list(""),
+      repository.locations(),
+    ]);
+    try {
+      return json(
+        inventoryContents(items, locations, { type, id }, offset, revision),
+      );
+    } catch (error) {
+      if (error instanceof InventoryScopeChanged)
+        throw new HttpError(409, error.message);
+      throw new HttpError(
+        404,
+        error instanceof Error ? error.message : "Scope unavailable.",
+      );
+    }
+  });
 }
 
 export function handleDashboard(
@@ -139,11 +197,23 @@ export function handleLocations(
       return json({ deleted: true });
     }
     if (request.method === "POST") {
-      const { name } = z
-        .object({ name: z.string().trim().min(1).max(100) })
+      const { name, parent_location_id } = z
+        .object({
+          name: z.string().trim().min(1).max(100),
+          parent_location_id: z.uuid().nullable().optional(),
+        })
         .strict()
         .parse(await readBody(request));
-      return json({ location: await repository.createLocation(name) }, 201);
+      return json(
+        {
+          location: await repository.createLocation(
+            name,
+            parent_location_id,
+            creationRequestId(request),
+          ),
+        },
+        201,
+      );
     }
     throw new HttpError(405, "Method not allowed.");
   });
@@ -158,10 +228,19 @@ export function handleAsk(
     const { question, history } = questionInput.parse(
       await readBody(request, 128_000),
     );
+    let snapshot: Promise<{ items: Item[]; locations: Location[] }> | undefined;
+    const getSnapshot = () =>
+      (snapshot ??= Promise.all([
+        repository.list(""),
+        repository.locations(),
+      ]).then(([items, locations]) => ({ items, locations })));
     return json(
       await askInventory(
         question,
-        { search: (q) => repository.list(q) },
+        {
+          snapshot: getSnapshot,
+          search: async (q) => searchInventory((await getSnapshot()).items, q),
+        },
         provider,
         history,
       ),
@@ -180,21 +259,58 @@ export function handleLocalAsk(request: Request, provider?: AnswerProvider) {
       );
     if (!isSameOrigin(request))
       throw new HttpError(403, "This request must come from the same site.");
-    const { question, history, items } = questionInput
+    const { question, history, items, locations } = questionInput
       .extend({
         items: z
           .array(inventoryFactInput)
-          .max(200)
+          .max(5000)
           .refine(
             (rows) => new Set(rows.map((row) => row.id)).size === rows.length,
             "Inventory IDs must be unique",
           ),
+        locations: z
+          .array(
+            z
+              .object({
+                id: z.string().min(1).max(160),
+                user_id: z.string().max(160).default("local"),
+                name: z.string().min(1).max(100),
+                parent_location_id: z.string().max(160).nullable().optional(),
+                version: z.number().int().positive().optional(),
+              })
+              .strict(),
+          )
+          .max(1000)
+          .default([]),
       })
-      .parse(await readBody(request, 256_000));
+      .parse(await readBody(request, 8_000_000));
+    const localItems: Item[] = items.map((item) => ({
+      ...item,
+      kind: item.kind ?? (item.quantity === 1 ? "durable" : "consumable"),
+      user_id: "local",
+      location_id: item.parent_container_id
+        ? null
+        : (item.resolved_location_id ?? null),
+      reorder_threshold: null,
+      version: 1,
+      created_at: "",
+      updated_at: "",
+    }));
+    const localLocations = locations.map((location) => ({
+      ...location,
+      user_id: "local",
+    }));
+    const snapshot = {
+      items: resolveHierarchy(localItems, localLocations),
+      locations: localLocations,
+    };
     return json(
       await askInventory(
         question,
-        { search: async (query) => searchFacts(items, query) },
+        {
+          snapshot: async () => snapshot,
+          search: async (query) => searchFacts(items, query),
+        },
         provider,
         history,
       ),

@@ -6,6 +6,10 @@ import type { InventoryFact, InventoryReader } from "./ask";
 export function inventoryIntent(question: string) {
   if (/\b(camp(?:ing)?|hik(?:e|ing))\b/i.test(question)) return "camping";
   if (
+    /\b(?:pack(?:ing)?|trip|travel|weekend away|prepare for)\b/i.test(question)
+  )
+    return "packing";
+  if (
     /\b(camera|photo(?:graphy)?)\b.*\b(accessor(?:y|ies)|gear|kit)\b/i.test(
       question,
     )
@@ -58,12 +62,16 @@ export async function retrieveInventory(
 ) {
   const intent = inventoryIntent(question);
   const queries =
-    intent === "camping"
+    intent === "camping" || intent === "packing"
       ? [
           "contact contacts lenses glasses medication medicine prescription inhaler bandage bandages first-aid",
           "toiletries toothbrush toothpaste soap sanitizer sunscreen repellent hygiene personal care",
-          "backpack rucksack shoes sneakers boots bottle jacket hoodie tent sleeping torch flashlight",
-          "camping hiking rain first-aid sunscreen stove food camera",
+          intent === "camping"
+            ? "backpack rucksack shoes sneakers boots bottle jacket hoodie tent sleeping torch flashlight"
+            : "backpack suitcase luggage shoes bottle clothing jacket hoodie shirt charger cable phone laptop travel",
+          intent === "camping"
+            ? "camping hiking rain first-aid sunscreen stove food camera"
+            : "travel toiletries clothing socks underwear toothbrush charger personal care",
         ]
       : intent === "accessories"
         ? [
@@ -79,7 +87,7 @@ export async function retrieveInventory(
   const accessory =
     /\b(tripod|lens(?:es)?|sd|memory card|batter(?:y|ies)|strap|filter|flash|camera bag|camera case|charger)\b/i;
   return unique.filter((item) => {
-    if (intent === "camping")
+    if (intent === "camping" || intent === "packing")
       return item.quantity > 0 && ["active", "stored"].includes(item.status);
     if (intent === "photography")
       return (

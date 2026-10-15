@@ -30,6 +30,11 @@ export function reconcile(item: Item, raw: Observation) {
     created_at,
     updated_at,
     location_name,
+    parent_container_id,
+    location_path,
+    ancestor_ids,
+    resolved_location_id,
+    location_ancestor_ids,
     ...input
   } = item;
   void id;
@@ -38,7 +43,15 @@ export function reconcile(item: Item, raw: Observation) {
   void created_at;
   void updated_at;
   void location_name;
-  itemInput.parse({ ...input, ...event.proposed_patch });
+  void location_path;
+  void ancestor_ids;
+  void resolved_location_id;
+  void location_ancestor_ids;
+  itemInput.parse({
+    ...input,
+    parent_container_id: parent_container_id ?? null,
+    ...event.proposed_patch,
+  });
   const reason =
     event.base_version !== item.version
       ? "version_conflict"

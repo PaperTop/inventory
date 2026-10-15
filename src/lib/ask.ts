@@ -1,5 +1,13 @@
 import { z } from "zod";
-import { conditions, statuses, type Item } from "./inventory";
+import { conditions, statuses, type Item, type Location } from "./inventory";
+import {
+  explicitScopeQuestion,
+  inventoryContents,
+  resolveScopeName,
+  scopeChoices,
+  type InventoryResult,
+  type InventoryScopeChoice,
+} from "./inventory-scope";
 import {
   inventoryIntent,
   retrieveInventory,
@@ -17,6 +25,7 @@ import {
   type InventoryChange,
 } from "./inventory-changes";
 export interface InventoryReader {
+  snapshot?(): Promise<{ items: Item[]; locations: Location[] }>;
   search(
     query: string,
   ): Promise<(InventoryFact & { location_path?: string[] })[]>;
@@ -37,7 +46,17 @@ export type InventoryFact = Pick<
   | "location_name"
   | "tags"
   | "attributes"
->;
+> &
+  Partial<
+    Pick<
+      Item,
+      | "kind"
+      | "location_path"
+      | "parent_container_id"
+      | "resolved_location_id"
+      | "location_ancestor_ids"
+    >
+  >;
 export interface AnswerProvider {
   answer(
     context: {
@@ -55,6 +74,8 @@ export type AskResult = {
   mode: "search" | "ai";
   notice?: string;
   changes?: InventoryChange[];
+  inventoryResult?: InventoryResult;
+  scopeChoices?: InventoryScopeChoice[];
 };
 export const answerOutput = z
   .object({
@@ -94,6 +115,11 @@ export const inventoryFactInput = z
     attributes: z
       .record(z.string().max(80), z.json())
       .refine((value) => JSON.stringify(value).length <= 1000),
+    kind: z.enum(["durable", "consumable", "container"]).optional(),
+    location_path: z.array(z.string().max(160)).max(128).optional(),
+    parent_container_id: z.string().min(1).max(160).nullable().optional(),
+    resolved_location_id: z.string().min(1).max(160).nullable().optional(),
+    location_ancestor_ids: z.array(z.string().max(160)).max(2).optional(),
   })
   .strict();
 
@@ -112,6 +138,10 @@ export function inventoryFacts(
       condition,
       location_name,
       location_path,
+      kind,
+      parent_container_id,
+      resolved_location_id,
+      location_ancestor_ids,
       tags,
       attributes,
     }) => ({
@@ -126,6 +156,11 @@ export function inventoryFacts(
       location_name: location_path?.slice(0, -1).join(" → ") || location_name,
       description,
       attributes: JSON.stringify(attributes).length <= 1000 ? attributes : {},
+      ...(kind ? { kind } : {}),
+      ...(location_path ? { location_path } : {}),
+      ...(parent_container_id !== undefined ? { parent_container_id } : {}),
+      ...(resolved_location_id !== undefined ? { resolved_location_id } : {}),
+      ...(location_ancestor_ids ? { location_ancestor_ids } : {}),
     }),
   );
 }
@@ -141,6 +176,60 @@ export async function askInventory(
   history?: ChatTurn[],
 ): Promise<AskResult> {
   ({ question, history } = questionInput.parse({ question, history }));
+  const priorScope = history?.some((turn) =>
+    explicitScopeQuestion(turn.question),
+  );
+  const followUp = /^(?:and\s+)?(?:in|inside|what about)\s+/i;
+  let scopeName =
+    explicitScopeQuestion(question) ??
+    (priorScope && followUp.test(question)
+      ? question.replace(followUp, "").replace(/[?.!]+$/, "")
+      : null);
+  // A full breadcrumb reply can answer a scope clarification without repeating
+  // the original sentence. Resolve it against current records, never chat prose.
+  if (!scopeName && priorScope && reader.snapshot && question.length <= 200) {
+    const snapshot = await reader.snapshot();
+    if (
+      resolveScopeName(
+        question,
+        scopeChoices(snapshot.items, snapshot.locations),
+      ).length
+    )
+      scopeName = question;
+  }
+  if (scopeName && reader.snapshot) {
+    const snapshot = await reader.snapshot();
+    const choices =
+      scopeName === "*"
+        ? [{ type: "all" as const, id: "all", name: "All inventory", path: [] }]
+        : resolveScopeName(
+            scopeName,
+            scopeChoices(snapshot.items, snapshot.locations),
+          );
+    if (choices.length !== 1)
+      return {
+        answer: choices.length
+          ? `Which location do you mean? ${choices.map((choice) => choice.path.join(" → ")).join("; ")}.`
+          : `I could not identify a location or container named “${scopeName}”. Choose its full path.`,
+        citations: [],
+        mode: "search",
+        ...(choices.length ? { scopeChoices: choices } : {}),
+      };
+    const page = inventoryContents(
+      snapshot.items,
+      snapshot.locations,
+      choices[0],
+    );
+    return {
+      answer:
+        page.total === 0
+          ? `There are no recorded items in ${page.scope.path.join(" → ") || page.scope.name}.`
+          : `${page.total} recorded ${page.total === 1 ? "item" : "items"} in ${page.scope.path.join(" → ") || page.scope.name}, including nested contents.${page.complete ? " All results are shown." : ` Showing ${page.items.length}; load the next page to see the rest.`}`,
+      citations: page.items.slice(0, 20),
+      mode: "search",
+      inventoryResult: page,
+    };
+  }
   const editing = requestsInventoryChange(question, history);
   // UX guard only: the actual security boundary is absence of any write capability.
   if (
@@ -155,14 +244,73 @@ export async function askInventory(
       mode: "search",
     };
   }
-  const items = boundedFacts(await retrieveInventory(question, reader));
+  const previousPacking = history?.findLast(
+    (turn) =>
+      ["camping", "packing"].includes(inventoryIntent(turn.question)) &&
+      !/^(?:please )?(?:remove|add|exclude|without|leave)\b/i.test(
+        turn.question,
+      ),
+  );
+  const packingFollowUp = Boolean(
+    previousPacking &&
+    !editing &&
+    /^(?:please )?(?:remove|leave|exclude|without|where|what about|add)\b/i.test(
+      question,
+    ),
+  );
+  let retrieved = await retrieveInventory(
+    packingFollowUp ? previousPacking!.question : question,
+    reader,
+  );
+  if (packingFollowUp) {
+    // Apply explicit list exclusions to the deterministic fallback as well as
+    // passing history to the provider. These never mutate inventory.
+    const excluded = new Set<string>();
+    const revisions = [
+      ...(history ?? [])
+        .slice((history ?? []).indexOf(previousPacking!) + 1)
+        .map((turn) => turn.question),
+      question,
+    ];
+    for (const text of revisions) {
+      const match = text.match(
+        /^(?:please )?(remove|exclude|without|leave(?: out)?|add)\s+(.+?)(?:\s+(?:from|to)\s+(?:(?:my|the)\s+)?(?:camping\s+)?(?:packing\s+)?list)?[.!?]*$/i,
+      );
+      if (!match) continue;
+      const term = match[2].replace(/^(?:the|my)\s+/i, "").toLowerCase();
+      if (match[1].toLowerCase() === "add") {
+        const available = (await reader.search(term)).filter(
+          (row) =>
+            row.quantity > 0 && ["active", "stored"].includes(row.status),
+        );
+        retrieved = [
+          ...new Map(
+            [...retrieved, ...available].map((row) => [row.id, row]),
+          ).values(),
+        ];
+      }
+      const exact = retrieved.filter((row) => row.name.toLowerCase() === term);
+      const matching = exact.length
+        ? exact
+        : retrieved.filter((row) => row.name.toLowerCase().includes(term));
+      for (const row of matching) {
+        if (match[1].toLowerCase() === "add") excluded.delete(row.id);
+        else excluded.add(row.id);
+      }
+    }
+    retrieved = retrieved.filter((row) => !excluded.has(row.id));
+  }
+  const items = boundedFacts(retrieved);
   const empty: AskResult = {
     answer:
       "No matching items found. Try an item name, location, category, or tag. This search cannot confirm that you do not own it.",
     citations: [],
     mode: "search",
   };
-  const packing = inventoryIntent(question) === "camping";
+  const intent = inventoryIntent(
+    packingFollowUp ? previousPacking!.question : question,
+  );
+  const packing = intent === "camping" || intent === "packing";
   const fallback: AskResult = !items.length
     ? empty
     : {
@@ -177,7 +325,9 @@ export async function askInventory(
             )
             .join("\n") +
           (packing
-            ? "\nThis is not a complete camping checklist. Check shelter, sleep gear, food, lighting, and weather protection for your trip."
+            ? intent === "camping"
+              ? "\nThis is not a complete camping checklist. Check shelter, sleep gear, food, lighting, and weather protection for your trip."
+              : "\nThis is a starting list from available records, not a complete trip checklist. Confirm your plans, weather, personal essentials and any supplies not found in the searched records."
             : ""),
         citations: items,
         mode: "search",
@@ -197,7 +347,11 @@ export async function askInventory(
     let searches = 0;
     let snapshot: Promise<InventoryFact[]> | undefined;
     const getSnapshot = () =>
-      (snapshot ??= reader.search("").then(inventoryFacts));
+      (snapshot ??= (
+        reader.snapshot
+          ? reader.snapshot().then((value) => value.items)
+          : reader.search("")
+      ).then(inventoryFacts));
     const checkRead = (offset: number) => {
       // One automatic overview plus at most twelve tool calls.
       if (++searches > 13) throw new Error("Inventory search limit reached.");

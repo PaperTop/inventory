@@ -1,5 +1,23 @@
 # Verification record
 
+## Saved-data readiness and refinement plan — 2026-10-14
+
+- Local configuration has a hosted Supabase URL/public key and a Google provider configured. Values were inspected only for presence/type, never printed. Neither disposable smoke-account pair is configured; there is no confirmed staging designation, local Vercel linkage, Vercel CLI, Supabase CLI, or hosting token available.
+- Read-only hosted Auth settings returned 200 with email authentication enabled. Zero-row PostgREST metadata checks for `locations.parent_location_id` and `locations.version` each returned 400 / `42703`; the creation-request ledger returned 404 / `PGRST205`. The configured target does not expose the schema this working tree requires. These are schema-readiness observations, not authenticated persistence or isolation verification. No inventory rows were retrieved and no external writes were made.
+- GitHub reports a successful Vercel status for the last pushed boundary, `e127e4a`, linked to [its deployment dashboard](https://vercel.com/papertops-projects/inventory/9s7JH8QCAWdNfKapmg1R1ZLnZ1wW). This establishes that deployment's status, not the version currently served by an alias. The latest source remains uncommitted/unpushed; no current hosted URL/version has been established.
+- Opening that exact deployment dashboard in the available browser redirected to Vercel login. No authenticated hosting session was available there; no login, account creation, plugin connection or hosting changes were attempted.
+- Synthetic-only live provider checks exposed an intermittent short camping-request fallback. Sanitized diagnostics identified an oversized `search_inventory.query`, rejected by the existing 200-character guard; the model-facing schema had not advertised that bound. The schema now includes the same limit, and invalid read-only search arguments return corrective tool feedback without executing a search. The model may correct them only within the unchanged four-turn/time budget. Deterministic regressions cover recovery and repeated-invalid exhaustion; final answer/citation validation and truthful fallback remain intact. No private inventory was sent and temporary diagnostics were removed. Independent live retest results are recorded in `design-qa.md`.
+
+Before hosted verification or release:
+
+1. Identify an existing designated test/staging Supabase project and app URL, confirm the deployed commit, and supply one disposable confirmed account (two for ownership/isolation checks) through local secret configuration, not chat. Do not use real-user accounts or production data for smoke writes.
+2. Inspect that target's applied migration history and take a recoverable backup. Reconcile every prerequisite in chronological order: inventory, containers, private photos, space management, lost-status removal, dashboard activity, then `202610130001_rooms_creation.sql`. The new migration remains unapplied by this team. Get explicit schema-migration authority before applying it; no automatic down migration is provided.
+3. Verify the target exposes Room parents/location versions, sibling uniqueness, the creation-request ledger and creation RPCs. Use the designated disposable accounts for minimal temporary Space/Room/container/item records: draft cancellation must write nothing; explicit Add must persist; retries must not duplicate or resurrect deleted records. Check fresh-load persistence, inherited paths, stale-write conflicts, and cross-owner isolation. Clean up only the exact records created by this run.
+4. Verify complete Jarvis scope pagination, duplicate-location choices, changed-revision restart and packing followups through the authenticated deployed app. The existing `test:supabase` script tests direct Auth/table/search operations but does not alone establish these app/Room/idempotency flows. Provider checks must use fabricated inventory unless private-data submission is separately authorized.
+5. Run the local release gate, then obtain separate commit/push/deployment authority. Verify the deployed version, redirects/authentication and the same saved-data flows after rollout. Use backup/forward-fix recovery if needed; preserve all real records.
+
+Hosted saved-data verification is blocked on the designated target, disposable accounts, migration readiness and release authority. Local mocked-session and embedded PostgreSQL coverage remains useful but does not substitute for hosted Auth/PostgREST/browser behavior.
+
 ## Inline Jarvis and container controls — 2026-10-13
 
 - Platform ran `npm run release:check` on the combined completed changes: formatting, ESLint, TypeScript, 234 tests passed (4 opt-in tests skipped), and the Next.js production build passed. `git diff --check` also passed.

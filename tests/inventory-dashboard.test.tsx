@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
@@ -180,6 +180,7 @@ it("keeps the Jarvis composer keyboard-usable while activity is loading or unava
 
 it("refreshes saved dashboard activity after an item edit finishes", async () => {
   const user = userEvent.setup();
+  const editableCamera = { ...camera, kind: "consumable" as const };
   let reads = 0;
   const fetchMock = vi.fn(async (path: string) => {
     if (path === "/api/dashboard") {
@@ -199,19 +200,31 @@ it("refreshes saved dashboard activity after an item edit finishes", async () =>
     });
   });
   vi.stubGlobal("fetch", fetchMock);
-  vi.spyOn(apiRepository, "update").mockResolvedValue({
-    ...camera,
+  let finishUpdate!: (item: Item) => void;
+  const savedUpdate = new Promise<Item>((resolve) => {
+    finishUpdate = resolve;
+  });
+  const update = vi.spyOn(apiRepository, "update").mockReturnValue(savedUpdate);
+  const updatedCamera = {
+    ...editableCamera,
     quantity: 2,
     version: 2,
-  });
+  };
 
   render(
-    <LiquidDashboard savedInventory={{ items: [camera], locations: [] }} />,
+    <LiquidDashboard
+      savedInventory={{ items: [editableCamera], locations: [] }}
+    />,
   );
   expect(await screen.findByText("Before the edit.")).toBeVisible();
   await user.click(screen.getByRole("button", { name: /Open Camera/ }));
   await user.click(screen.getByRole("button", { name: "Increase quantity" }));
-
+  await waitFor(() => expect(update).toHaveBeenCalledOnce());
+  expect(screen.getByText("Before the edit.")).toBeVisible();
+  await act(async () => {
+    finishUpdate(updatedCamera);
+    await savedUpdate;
+  });
   expect(await screen.findByText("After the edit.")).toBeVisible();
   await waitFor(() =>
     expect(

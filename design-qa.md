@@ -183,3 +183,66 @@ Product Designer independently accepted desktop/mobile layout, Plan together, dr
 QA ran `npm run release:check` on the final source: formatting, lint, typecheck, 228 tests passed (4 skipped), and production build passed. No remaining confirmed defects. No backend changes, live migration, deployment, commit, or push were performed for this assignment.
 
 final result: passed
+
+## Creation drafts, Rooms, placement/order, and full Jarvis results — 2026-10-13
+
+Historical acceptance record: the movement/order feature described below was subsequently canceled. The selective-removal verification below supersedes that feature's acceptance and migration status.
+
+All creation entry points open unsaved drafts. Item/container drafts begin with a blank name and explicit destination; current Space/Room/Container is preselected, while global All items stays unplaced. Only explicit Add publishes a record. Cancel/Escape restores trigger focus, required errors focus the field, pending submissions are guarded, and failed saves retain the draft and its idempotency key.
+
+Root physical locations are Spaces; optional child locations are Rooms. Add room is visible in the selected Space and expanded branch, with its parent fixed in the draft. Saved and sample hierarchy use stable IDs and full physical paths. Room cards and tree derive from the same graph; direct inventory views do not flatten descendants into reorder siblings. Existing editing remains separate, including stable Room parent identity when a Space is renamed.
+
+Movement controls are available on location/container tree rows, Space/Room cards, and item/container grid/table rows. Separate handles and insertion/placement targets distinguish sibling order from physical moves. Menus expose Move to and Move up/down for keyboard/touch use. Automatic or filtered inventory views require switching to Custom order before ordering; location/tree order remains explicit. Shared placement rules reject cycles and invalid destinations. Saved changes await version-checked atomic responses and refreshed hierarchy; sample changes are labeled session-only. Failed saves retain prior placement/order.
+
+Jarvis keeps its single inline Dashboard conversation and renders complete scope pages with counts, descendant paths, duplicate-name choices, load-more/retry, and revision-aware restart. The actual sample Home query returns all 17 records, including direct inventory and Room/container descendants, excluding College records. Automated UI acceptance exercised 250 records across pages without duplication or silent truncation.
+
+Evidence: `/private/tmp/inventory-four-home-final.jpg` (1280 × 720); `/private/tmp/inventory-four-mobile-menu-final.jpg` (390 × 740); `/private/tmp/inventory-four-qa-03-room-draft.jpg`; `/private/tmp/inventory-four-qa-06-home-results-fixed.jpg`. Product Designer independently accepted creation/Room and movement layouts, full destination paths, viewport-fitting menus, primary Move styling, contextual result announcements, and mobile navigation after status feedback. QA verified real pointer placement/reordering, keyboard menus, invalid targets, saved snapshot/remount persistence, conflicts, packing followups, creation cancellation/failures, and paged result behavior. A portal/mobile navigation focus-trap conflict and sample parent-name identity gap were fixed with regression coverage.
+
+Final QA `npm run release:check`: formatting, lint, typecheck, 272 tests passed (4 live-provider tests skipped), and production build passed. Hosted saved-data behavior, physical-phone assistive technology, and live provider output are unverified. The required hierarchy/order migration is saved but not applied. No live writes, deployment, commit, or push were performed. No confirmed functional blockers remain; the non-interactive persistent status can visually overlap the mobile header as minor polish.
+
+final result: passed
+
+## Selective cancellation of universal movement and display ordering — 2026-10-13
+
+The user canceled the new universal drag/movement and manual display-order feature. Its controls, menus, provider/state, route/service, manual-order fields, persistence RPC, and dedicated tests were removed. Existing item Location editing, creation drafts, stable Space/Room hierarchy, and complete Jarvis location/packing behavior remain in scope. Source scanning finds canceled identifiers only in negative regression assertions, not implementation. The unpublished migration is now `202610130001_rooms_creation.sql`, retaining hierarchy and idempotent Add safety without movement RPC or order columns; no live migration application is presumed or performed.
+
+QA's retained acceptance batch passed 16 tests. The new removal workflow plus migration database suite passed 8 tests, checking navigation/Space/grid/list controls, no manual-order option, no draggable elements, retained Location editing, absent database movement/order structures, and retained hierarchy/creation safeguards. Backend independently reports 168 backend tests passing with 4 live-provider tests skipped; frontend reports 52 retained tests passing.
+
+One confirmed regression was routed to the frontend engineer: All items → View Contact lenses → Item location displayed `Bedroom → Cabinet → Drawer` instead of `Home → Bedroom → Cabinet → Drawer`, compromising full-path disambiguation. Container destination options used raw items rather than the resolved hierarchy. The engineer fixed it; QA's regression and actual browser retest pass. The browser also returned all 17 Home records, including direct inventory and descendant Rooms/containers, with full paths and no movement controls. Evidence: `/private/tmp/inventory-removal-qa-final.jpg`.
+
+Final stable `npm run release:check` passed with exit status 0: formatting, lint, typecheck, 265 tests passed (4 live-provider tests skipped), and production build passed. The built route list excludes `/api/placement` and retains `/api/inventory/contents`. Local acceptance criteria for the selective removal and retained three improvements are met; no confirmed functional blockers remain. Live provider accuracy, hosted migration/persistence, and physical-device assistive technology remain unverified. No live writes, deployment, commit, or push were performed. The obsolete QA movement suite was removed; its canceled behavior is documented in the historical record rather than treated as current acceptance.
+
+## Scope, creation, empty-state and status refinements — 2026-10-14
+
+Independent QA used the screenshot-first product-flow audit for visual evidence. Current-run steps:
+
+1. Empty Travel Space — healthy: explains direct inventory versus optional Rooms and provides a contextual Add item action.
+   ![Empty Space](/private/tmp/inventory-refinement-01-empty-space.jpg)
+2. Unsaved Add item — healthy: explicit Add/Cancel and the chosen destination are visible; Cancel creates no record.
+   ![Unsaved destination](/private/tmp/inventory-refinement-02-destination-draft.jpg)
+3. Empty Home → Bathroom Room — healthy: correct full path and contextual Add item, rather than misleading search advice.
+   ![Empty Room](/private/tmp/inventory-refinement-03-empty-room.jpg)
+4. Empty disposable local sample Container — healthy: Add item targets this container; the toolbar retains Add container. Only browser-session synthetic records were created, never hosted records.
+   ![Empty Container](/private/tmp/inventory-refinement-05-empty-container.jpg)
+5. Mobile draft at 390 × 740 — healthy: full destination wraps, Add and Cancel fit, no horizontal overflow.
+   ![Mobile draft](/private/tmp/inventory-refinement-06-mobile-draft.jpg)
+6. Mobile status — healthy: Item added is inline at y553–568, clear of the navigation button at y12–48 and the Container close control. `role=status` supplies announcement semantics; a physical screen reader was not tested. The canceled movement overlay was already removed before this refinement, so this is not evidence of a newly repositioned floating toast.
+   ![Mobile inline status](/private/tmp/inventory-refinement-07-mobile-status.jpg)
+7. Desktop status — healthy: the inline Editing item message is clear of toolbar and Container close controls.
+   ![Desktop inline status](/private/tmp/inventory-refinement-08-desktop-status.jpg)
+8. Complete scope — healthy after correction: Home shows 19 of 19 records (17 original plus two disposable local fixtures), descendant paths, and All results loaded. Composer remains available without header/status overlap.
+   ![Complete scope](/private/tmp/inventory-refinement-09-complete-scope.jpg)
+
+Behavioral coverage: five retained suites passed 18 tests; the expanded Jarvis UI suite passed five tests including initial chosen-scope failure/retry by exact ID, 250-record total/loaded transitions, retry without duplicate pages, and changed-revision restart replacing old rows with a fresh 120-record scope. Empty Space/Room/Container actions preserve destination and remain unwritten through cancellation. Global Add rejects a blank destination and retains input without a write. Movement/reorder removal remains covered.
+
+Confirmed UI defect, closed: loading every continuation page of a 250-record fixture displayed 250 of 250 but still More results available. The first-page-only backend complete flag was incorrectly used for cumulative UI completion. Full-stack changed the status to use the accumulated records and exhausted next cursor; the original regression passes without changing the backend contract.
+
+Live provider evidence is separate: the initial network-restricted attempt could not reach the provider and is not a model result. With approved network and fabricated records only, three of four live tests passed (camping/work personal essentials and direct camera answer); the short Pack me for camping test fell back to deterministic search and repeated once. After a bounded tool-query correction, QA's single targeted retest still fell back after 21.49 seconds. That run's cause was not established by the generic notice alone. Full-stack is conducting a bounded sanitized diagnostic pass; live packing is not signed off. No private inventory was sent.
+
+Hosted checks are blocked, not passed: local Supabase URL/public key are set but neither disposable account pair exists and the target is not designated staging. Full-stack's read-only Auth check returned 200; zero-row checks returned missing Room parent/version columns (400 / 42703) and missing creation ledger (404 / PGRST205). No inventory rows were read or modified. The current uncommitted application version is not established on a hosted app URL. Required prerequisites are a designated existing test target/current deployed version, migration readiness confirmed by its owner, and disposable confirmed accounts (two for cross-owner isolation). Live schema migration, deployment, commits and pushes are outside this assignment. Local mocked sessions and PGlite do not establish hosted save/reload, no-phantom Add or two-account isolation.
+
+Full-stack's bounded post-fix diagnostic sample subsequently passed four targeted short-prompt runs in approximately 3–4 seconds, without capturing another exception. This does not explain or invalidate QA's post-fix 21.49-second fallback; residual live variability has no confirmed cause. The 200-character tool schema/corrective-feedback fix is supported by deterministic regressions, but reliable live packing remains only partially accepted. Temporary diagnostics were removed and no further repeated live calls were made.
+
+Final combined `npm run release:check` passed on the frozen source with exit status 0: formatting, lint, typecheck, 273 tests across 40 files passed, four opt-in live tests in one file skipped, and production build passed. `git diff --check` passed. The built routes retain `/api/inventory/contents` and exclude `/api/placement`; source scanning found no canceled movement/reorder implementation. Documentation-only final result updates were subsequently formatting-checked. The QA local server and disposable browser session were closed; no hosted records were created or cleaned up.
+
+Overall acceptance is partial: the four UI refinements pass locally; reliable live short-prompt packing and real saved-data verification are not established. Local UI/API mocks validate contracts and fresh-load fixtures; embedded PostgreSQL validates actual migration constraints/RLS but not hosted Auth/PostgREST/browser services. Physical-device accessibility, real screen-reader announcements and cross-device persistence remain unverified. Success status lifetime was checked in source (eight seconds); error rendering stays separate from expiring success notices, but timed assistive-technology behavior was not independently exercised.
