@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { tripContext } from "./trip-context";
 import {
   failureReason,
   JarvisFailure,
@@ -76,6 +77,8 @@ export interface AnswerProvider {
 }
 export type ChatTurn = { question: string; answer: string };
 export type AskResult = {
+  contextNotice?: string;
+  clarification?: boolean;
   answer: string;
   citations: InventoryFact[];
   mode: "search" | "ai";
@@ -258,6 +261,15 @@ export async function askInventory(
         turn.question,
       ),
   );
+  const trip = !editing ? tripContext(question, history) : null;
+  if (trip && "clarification" in trip)
+    return {
+      answer: trip.clarification!,
+      citations: [],
+      mode: "search",
+      clarification: true,
+    };
+  const planningQuestion = trip?.question ?? question;
   const packingFollowUp = Boolean(
     previousPacking &&
     !editing &&
@@ -266,7 +278,7 @@ export async function askInventory(
     ),
   );
   let retrieved = await retrieveInventory(
-    packingFollowUp ? previousPacking!.question : question,
+    packingFollowUp ? previousPacking!.question : planningQuestion,
     reader,
   );
   if (packingFollowUp) {
@@ -310,18 +322,20 @@ export async function askInventory(
   const items = boundedFacts(retrieved);
   const empty: AskResult = {
     answer:
+      (trip?.summary ?? "") +
       "No matching items found. Try an item name, location, category, or tag. This search cannot confirm that you do not own it.",
     citations: [],
     mode: "search",
   };
   const intent = inventoryIntent(
-    packingFollowUp ? previousPacking!.question : question,
+    packingFollowUp ? previousPacking!.question : planningQuestion,
   );
   const packing = intent === "camping" || intent === "packing";
   const fallback: AskResult = !items.length
     ? empty
     : {
         answer:
+          (trip?.summary ?? "") +
           (packing
             ? "A starting packing list from your available inventory:\n"
             : "") +
@@ -398,7 +412,7 @@ export async function askInventory(
     };
     const rawResult = await provider.answer(
       {
-        question,
+        question: planningQuestion + (trip?.summary ? `\n${trip.summary}` : ""),
         items: structuredClone(items),
         ...(history?.length ? { history } : {}),
       },
@@ -441,14 +455,22 @@ export async function askInventory(
       : "";
     // Never truncate the model's answer or exceed the validated answer budget.
     const includedEssentials =
-      result.answer.length + check.length <= 4000 ? essentials : [];
+      result.answer.length + check.length + (trip?.summary?.length ?? 0) <= 4000
+        ? essentials
+        : [];
+    const answer = result.answer + (includedEssentials.length ? check : "");
+    const summary = trip?.summary ?? "";
     reportDiagnostic(reader.diagnose, {
       stage: "answer",
       outcome: "success",
       elapsedMs: performance.now() - answerStarted,
     });
     return {
-      answer: result.answer + (includedEssentials.length ? check : ""),
+      answer:
+        summary.length + answer.length <= 4000 ? summary + answer : answer,
+      ...(summary.length + answer.length > 4000
+        ? { contextNotice: summary }
+        : {}),
       citations: [...ids.map((id) => evidence.get(id)!), ...includedEssentials],
       mode: "ai",
       ...(changes.length ? { changes } : {}),

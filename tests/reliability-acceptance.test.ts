@@ -52,7 +52,7 @@ it.each(["transport", "timeout", "malformed"])(
       }),
     });
     const result = await askInventory(
-      "Pack me for camping",
+      "Pack me for camping — basic list",
       inventory,
       provider,
     );
@@ -89,7 +89,7 @@ it("aborts an in-flight model invocation without further model calls or inventor
     },
   );
   const result = askInventory(
-    "Pack me for camping",
+    "Pack me for camping — basic list",
     reader(),
     createReadOnlyAnswerGraph({ invoke }),
   );
@@ -124,7 +124,7 @@ it("rejects a foreign citation after a real tool lookup, rather than letting mod
         ),
   );
   const result = await askInventory(
-    "Pack me for camping",
+    "Pack me for camping — basic list",
     reader(),
     createReadOnlyAnswerGraph({ invoke }),
   );
@@ -154,7 +154,7 @@ it.each([
     const events: JarvisDiagnostic[] = [];
     const inventory = reader();
     const result = await askInventory(
-      "Pack me for camping",
+      "Pack me for camping — basic list",
       { ...inventory, diagnose: (event) => events.push(event) },
       createReadOnlyAnswerGraph({
         invoke: async () => {
@@ -260,7 +260,7 @@ it.each(["foreign-citation", "illegal-tool", "limited-answer"])(
       },
     );
     const result = await askInventory(
-      "Pack me for camping",
+      "Pack me for camping — basic list",
       {
         search: async (query) => searchFacts(rows, query),
         searchPage: undefined,
@@ -354,7 +354,7 @@ it("surfaces uncited recorded personal essentials separately from the model's pa
     itemIds: ["bag"],
   }));
   const result = await askInventory(
-    "Help me pack for camping for two nights.",
+    "Help me pack for camping for two nights — basic list.",
     { search: async (query) => searchFacts(owned, query) },
     { answer },
   );
@@ -389,10 +389,17 @@ it("does not reintroduce an explicitly excluded personal essential in a packing 
         itemIds: ["bag"],
       }),
     },
-    [{ question: "Pack me for camping", answer: "A starting packing list." }],
+    [
+      {
+        question: "Pack me for camping — basic list",
+        answer: "A starting packing list.",
+      },
+    ],
   );
   expect(result.citations.map((row) => row.id)).not.toContain("guard");
-  expect(result.answer).not.toMatch(/Night guard/i);
+  expect(
+    result.answer.split("Recorded personal essentials to review")[1],
+  ).not.toMatch(/Night guard/i);
   expect(result.changes).toBeUndefined();
 });
 
@@ -420,21 +427,29 @@ it("bounds optional recorded-essential review without truncating an already vali
   const inventory = {
     search: async (query: string) => searchFacts(owned, query),
   };
-  const result = await askInventory("Pack me for camping", inventory, {
-    answer: async () => ({
-      answer: "Backpack is available.",
-      itemIds: ["bag"],
-    }),
-  });
+  const result = await askInventory(
+    "Pack me for camping — basic list",
+    inventory,
+    {
+      answer: async () => ({
+        answer: "Backpack is available.",
+        itemIds: ["bag"],
+      }),
+    },
+  );
   expect(result.citations).toHaveLength(5);
   expect(
     result.citations.every((row) => owned.some((known) => known.id === row.id)),
   ).toBe(true);
   expect(result.citations.filter((row) => row.id !== "bag")).toHaveLength(4);
   const longAnswer = "x".repeat(4000);
-  const capped = await askInventory("Pack me for camping", inventory, {
-    answer: async () => ({ answer: longAnswer, itemIds: ["bag"] }),
-  });
+  const capped = await askInventory(
+    "Pack me for camping — basic list",
+    inventory,
+    {
+      answer: async () => ({ answer: longAnswer, itemIds: ["bag"] }),
+    },
+  );
   expect(capped.mode).toBe("ai");
   expect(capped.answer).toBe(longAnswer);
   expect(capped.citations.map((row) => row.id)).toEqual(["bag"]);

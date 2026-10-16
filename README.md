@@ -1,156 +1,196 @@
 # Inventory
 
-A private personal inventory MVP built with Next.js, Supabase Auth/Postgres, and an inventory AI assistant. Track possessions, consumables, locations, tags, condition, and stock. Search your items and ask where they are.
+A personal inventory app built with Next.js and Supabase. Track items and consumable stock, organize them into Spaces, optional Rooms and nested Containers, and search or ask Jarvis about your records.
 
-The project uses permissively licensed open-source libraries. Google ADK and Vercel AI SDK are not dependencies. The default costs **zero model calls**: Ask returns matching inventory records. Optional inference runs through a bounded LangGraph workflow with LangChain model adapters, using Ollama or another OpenAI-compatible server. Claude remains an explicit opt-in adapter. See [Technology and cost decisions](docs/technology.md).
+New items and locations stay unsaved until you choose **Add**. Saved accounts support private item photos; sample data stays in memory and resets on reload.
 
-## Try it immediately
+## Architecture
 
-Requires Node.js 22+ and npm.
+The application separates interaction state, request authorization, domain validation, database access and model orchestration. The model is not given a database client, SQL tool or authentication token.
+
+```mermaid
+flowchart TD
+    UI[Next.js dashboard and inventory store] --> API[Authenticated API routes]
+    Auth[Supabase Auth] --> API
+    API --> Repo[User-scoped repository]
+    Repo --> DB[PostgreSQL constraints and RLS]
+    API --> Ask[Jarvis intent and clarification]
+    Ask --> Scope[Deterministic scoped results]
+    Scope --> Repo
+    Ask --> Graph[Bounded LangGraph workflow]
+    Graph --> Reader[Read-only inventory tools]
+    Reader --> Repo
+    Graph --> Provider[LangChain model adapter]
+    Provider --> Inference[Google, compatible server or Claude]
+    Graph --> Prepared[Prepared changes on explicit edit requests]
+    Prepared --> Validate[Schema, ownership and version validation]
+    Validate --> Store[Browser inventory store]
+    Store --> API
+    UI --> Upload[Authenticated private photo upload]
+    Upload --> Storage[Supabase Storage policies]
+```
+
+1. **UI and session boundary.** [InventoryApp](src/components/inventory-app.tsx) chooses between labeled in-memory samples and a signed-in account. Saved inventory is loaded before the workspace opens; failures stay visible rather than silently switching to samples. The [dashboard](src/components/liquid-dashboard.tsx) owns navigation, drafts, item details and the inline conversation. The [inventory store](src/components/use-inventory-store.ts) coordinates writes and ignores work that no longer belongs to the active workspace.
+2. **API and identity.** [Request context](src/lib/context.ts) verifies the Supabase user with `auth.getUser()`. [Handlers](src/lib/handlers.ts) validate inputs and delegate through repository contracts. Mutating requests require a matching Origin; personalized JSON responses are private and uncached. The client cannot choose a record's owner.
+3. **Repository and database.** The [repository](src/lib/repository.ts) uses that user's session and filters by owner. PostgreSQL independently enforces RLS, owner-matching relationships, hierarchy constraints and versioned mutations. RPCs keep creation retries and conflicting edits inside transactions rather than relying on browser state for correctness.
+4. **Jarvis reads and reasoning.** [Ask](src/lib/ask.ts) resolves exact inventory scopes separately from model-generated prose. Packing clarification is deterministic. When inference is enabled, the [answer graph](src/lib/answer-graph.ts) exposes bounded search/catalogue tools, validates structured output and rejects unknown citation IDs. One request shares a complete account snapshot; individual model pages remain bounded.
+5. **Explicit writes through Jarvis.** Only an explicit add/edit request enables change preparation. The model returns proposals, not saved records. The browser validates the batch and applies it through the existing store and authenticated mutation routes. A partial failure reports completed records and unapplied changes; there is no automatic retry of a partially applied batch. Packing suggestions and revisions never apply inventory changes.
+6. **Private media.** Uploads go to owner-specific Storage paths. The item stores an object path; an authenticated reader checks ownership and issues a short-lived signed URL. Media storage and item-version checks remain separate so an unsuccessful attachment does not overwrite the previously saved photo.
+
+### Design choices and tradeoffs
+
+| Choice                                                     | Reason and consequence                                                                                                                                                                  |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Next.js UI and API in one TypeScript app                   | Shared validation and a single deployment unit; still deployable as a regular Node server rather than requiring Vercel-specific services.                                               |
+| PostgreSQL constraints and RLS alongside API checks        | The database protects ownership and invariants even if a client bypasses the UI. Version conflicts remain explicit instead of silently overwriting another session.                     |
+| Spaces/Rooms are locations; Containers are inventory items | Physical locations have stable identities, while a Container can hold recursive contents and be edited like a possession. Paths are derived rather than copied to every descendant.     |
+| Deterministic scope queries, optional model reasoning      | “Everything in Home” is a paginated data operation, not a claim that a model's short citation list is exhaustive. Basic use needs no model service.                                     |
+| Bounded LangGraph tool loop                                | Retrieval can expand beyond literal question words without granting arbitrary execution. The final turn is reserved for answering; incomplete or invalid inference falls back honestly. |
+| No embeddings service or vector database                   | Fewer infrastructure dependencies and transparent keyword/category retrieval, with less semantic flexibility when inference is disabled.                                                |
+| Local or hosted inference                                  | Local inference keeps model traffic on the machine but requires suitable hardware; hosted inference sends selected facts/history outside the app and may incur usage charges.           |
+
+Direct dependencies and their licenses are recorded in [dependency-licenses.json](dependency-licenses.json); resolved versions are pinned in `package-lock.json`. Model weights are not bundled, and their license is separate from the inference runtime. See [technology and cost decisions](docs/technology.md) for supporting rationale.
+
+## Run locally
+
+Requires Node.js 22+ and npm (`.nvmrc` selects Node 22).
 
 ```sh
-nvm use # optional, if nvm is installed
 npm ci
 npm run dev
 ```
 
-Open **http://localhost:3000**. The liquid-glass dashboard includes sample inventory, search, sorting, filters, reusable spaces, editable items, and nested containers. Click a container card to open its contents beside the grid; containers can be nested to create paths such as `Bedroom → Cabinet → Drawer → Camera`.
+Open [127.0.0.1:3000](http://127.0.0.1:3000). No Supabase or model credentials are needed to explore the sample inventory. Without a signed-in account, changes are session-only. Saved-inventory loading failures offer a retry; they do not replace your records with samples.
 
-Without Supabase variables or an authenticated session, the dashboard uses clearly labeled sample data in memory. With both public Supabase variables configured and a valid session, it loads the account’s saved inventory and persists item, container, and location changes. `/demo` redirects to `/` so the same sample fallback is available for preview.
+## Set up saved inventory
 
-## Architecture, top down
+1. Create or select a Supabase project. Apply the SQL files in [supabase/migrations](supabase/migrations/) in filename order. For an existing Inventory database, review its migration history and apply only pending files. Do not apply these migrations to an unrelated schema.
+2. Copy [.env.example](.env.example) to `.env.local` if that file does not already exist. Set:
 
-```mermaid
-flowchart TD
-    UI[Next.js dashboard] --> API[Authenticated API routes]
-    API --> Repo[User-scoped inventory repository]
-    Repo --> DB[Supabase Postgres and RLS]
-    Auth[Supabase Auth] --> API
-    API --> Ask[Read-only Ask service]
-    Ask --> Reader[Search capability]
-    Reader --> Repo
-    Ask --> Graph[Optional read-only LangGraph workflow]
-    Graph --> Provider[LangChain model adapter]
-    Provider --> Inference[Ollama or compatible inference]
-    Vision[Future camera adapter] -.-> Observation[Observation envelope]
-    Observation -.-> Reconcile[Pure reconciliation function]
-    Reconcile -.-> Review[Human review proposal]
-```
+   ```dotenv
+   NEXT_PUBLIC_SUPABASE_URL=your-project-api-url
+   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-public-publishable-key
+   AI_PROVIDER=search
+   ```
 
-1. **UI:** loads saved inventory when an authenticated Supabase session is available, falls back to labeled sample data otherwise, and renders cited answers from Ask.
-2. **API:** verifies the Supabase user, checks same-origin writes, validates JSON, and returns consistent errors.
-3. **Repository:** performs queries with that user's session. Database RLS independently enforces ownership.
-4. **Ask:** retrieves bounded inventory facts, then lets Jarvis refine retrieval through a read-only `search_inventory` tool. The model sees facts and recent conversation, with no database client, auth token, or SQL tool. On explicit add/edit requests, tools prepare validated changes that the browser applies through the existing inventory store. Citations are validated against records actually retrieved in this request.
-5. **Reconciliation:** turns a future observation into a review proposal. It cannot mutate inventory.
+   Use the public publishable key (or legacy anon key), never a service-role or secret key. Keep `.env.local` out of version control.
 
-Follow the code in this order:
+3. In Supabase Auth, set the Site URL to `http://127.0.0.1:3000` and allow `http://127.0.0.1:3000/auth/confirm`. Use the same hostname consistently. If email confirmation is enabled, set the confirmation email link to:
 
-| Responsibility             | Entry point                                                |
-| -------------------------- | ---------------------------------------------------------- |
-| Prototype app entry        | `src/app/page.tsx`                                         |
-| Dashboard and interactions | `src/components/liquid-dashboard.tsx`                      |
-| Item validation and search | `src/lib/inventory.ts`                                     |
-| API behavior               | `src/lib/handlers.ts`                                      |
-| Verified request identity  | `src/lib/context.ts`                                       |
-| Database queries           | `src/lib/repository.ts`                                    |
-| Read-only answers          | `src/lib/ask.ts`                                           |
-| Answer workflow            | `src/lib/answer-graph.ts`                                  |
-| Model adapter              | `src/lib/provider.ts`                                      |
-| Vision proposal boundary   | `src/lib/reconciliation.ts`                                |
-| Tables and access policies | `supabase/migrations/` (apply SQL files in filename order) |
+   ```html
+   <a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email">
+     Confirm your email
+   </a>
+   ```
 
-The original design and implementation checklist are in `docs/superpowers/`.
+4. Restart the dev server, then choose **Sign in → Create an account**. Confirm your email if required. New accounts start empty: add a Space, then an item, Room or Container. Signing out returns to sample data.
 
-## Connect real accounts and storage
+**Migration prerequisite:** this version requires [202610130001_rooms_creation.sql](supabase/migrations/202610130001_rooms_creation.sql) after all earlier migrations. It adds Room hierarchy and safe creation retries. A code push does not apply database migrations. Back up an existing database and review pending changes before rollout; see the [verification plan](docs/verification.md).
 
-### Option A: Hosted Supabase
+For local Supabase, install Docker and the Supabase CLI, run `supabase start`, and use the local API URL and public key from `supabase status`. Later migrations use `supabase migration up --local`. The included development configuration disables email confirmation. Do not use `supabase db reset` on data you need to keep.
 
-1. Create a Supabase project.
-2. Open its SQL editor and apply all files in `supabase/migrations/` in filename order, including `202609170001_space_management.sql` for safe space deletion and moving contents. On an existing Inventory database, apply only migrations not already applied. Or use the CLI workflow below.
-3. Copy `.env.example` to `.env.local` and populate `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` from the project's API settings. A legacy anon key also works in the publishable-key variable. **Do not use a service-role or secret key.**
-4. In **Authentication → URL Configuration**, set Site URL to `http://localhost:3000` for development. Add `http://localhost:3000/auth/confirm` to allowed redirects. Use the same hostname consistently, including `127.0.0.1` if you choose it.
-5. With email confirmation enabled, edit the **Confirm signup** email template to use this link:
+For a CLI-managed hosted project, authenticate with the Supabase CLI, link the intended project and review the pending migration plan before `supabase db push`. This is a schema-changing operation, not part of starting the local app. Supabase Studio for the included local setup is at `http://localhost:54323`. Password reset and social login are not implemented; email confirmation redirects return to the app root rather than accepting arbitrary destinations.
 
-```html
-<a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email"
-  >Confirm your email</a
->
-```
+## Data model and invariants
 
-6. Restart `npm run dev` after configuration. Click **Sign in → Create an account**, confirm your email, and sign in. New accounts start with an empty inventory; create a place, then add your first item. Sign out returns to the sample inventory. Loading failures offer a retry without substituting samples. Supabase controls its password policy and Auth rate limits.
+The schema lives in [versioned SQL migrations](supabase/migrations/); [Zod domain contracts](src/lib/inventory.ts) validate the application inputs. Database constraints are the persistence boundary, not just a mirror of form validation.
 
-Confirmation redirects are fixed to the app root; arbitrary redirect URLs are not accepted. Password reset/social login are outside this MVP.
+| Table                         | Responsibility                                                                                                                               |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `items`                       | Durable possessions, consumable stock and Containers; category, tags, status, condition, JSON attributes, placement, timestamps and version. |
+| `locations`                   | Root Spaces and optional one-level child Rooms, with owner, stable ID, parent ID and version.                                                |
+| `inventory_creation_requests` | Owner/entity-scoped consumed Add UUIDs, retained after entity deletion so a delayed retry cannot resurrect it.                               |
+| `inventory_activity`          | Trigger-generated audit events for item creation, edits, moves and deletion, including the `user` or `jarvis` action channel.                |
+| `inventory_dashboard_visits`  | A per-user marker for the last explicitly acknowledged dashboard briefing.                                                                   |
+| `inventory_observations`      | Append-only proposed observations with event identity, confidence, observed time and base version; separate from confirmed item state.       |
 
-For repeatable CLI deployment, install the Supabase CLI using its [official instructions](https://supabase.com/docs/guides/local-development/cli/getting-started), then:
+### Quantities and placement
 
-```sh
-supabase login
-supabase link --project-ref YOUR_PROJECT_REF
-supabase db push
-```
+- `durable` items and `container` records have `quantity = 1` and no reorder threshold. `consumable` stock accepts nonnegative decimal quantities with a unit and optional low-stock threshold. Remaining capacity can be represented as attributes or consumable stock rather than turning a durable possession into an arbitrary count.
+- An item cannot have both `location_id` and `parent_container_id`. A root Container must have a location; a nested Container or item belongs to one parent Container. Ordinary items may be unplaced at the API level; creation forms require an explicit destination.
+- Effective location, ancestor IDs and full paths are derived from the root. Changing an existing Container's placement through the Location editor changes its descendants' inherited paths without rewriting each child. There is no universal drag-and-drop or manual reorder workflow.
+- Container cycles, foreign-owner parents, non-container parents, conversion of an occupied Container and deletion of non-empty Containers are rejected. Owner-matching foreign keys protect relationships independently of client validation.
+- A Space has no parent; a Room belongs to exactly one root Space. Names are unique among siblings, allowing `Home → Bedroom` and `Cabin → Bedroom`. Existing root locations are not converted to Rooms by guessing from names. A Space with Rooms cannot be deleted until those Rooms are removed.
+- Location deletion uses a transactional RPC: direct contents are reassigned to an allowed destination, or the operation fails instead of stranding Container roots. Item placement remains editable through the existing Location field.
 
-Do not apply this initial migration to an unrelated existing schema without reviewing its table names.
+### Consistency and audit
 
-### Option B: Local Supabase
+- Updates increment the item's `version` in PostgreSQL. Item edit/delete requests supply the version they read; stale writes return `409`. Location versions support consistent hierarchy snapshots; the location rename HTTP contract does not accept an expected-version field.
+- Explicit creation uses `X-Inventory-Request-Id`, one UUID per draft. Retrying the same successful request returns the same record; reusing its key for different data or a deleted record is rejected. A confirmed insert is not reported as failed merely because a subsequent hierarchy read failed. After an ambiguous network failure, retain the draft/key and reload before retrying.
+- Status is `active`, `stored`, `lent` or `disposed`; condition is `new`, `good`, `fair`, `poor` or `unknown`. Tags are normalized lowercase unique arrays; JSON attributes are size-bounded.
+- Deletion is permanent and removes the item's observations. Use `disposed` to retain the possession's record. Consumed creation keys remain until the owning account is removed.
+- Activity is written by triggers, not fabricated from the current item list. “Since your last visit” requires a durable acknowledged marker; a first visit uses recorded activity from the past 30 days. `X-Inventory-Actor: jarvis` records an action channel, not a separate identity or authorization grant.
+- Observation uniqueness on `(user_id, source, source_event_id)` prevents duplicate events. The observation table is evidence, not an alternate route for silently updating inventory.
 
-Install Docker and the Supabase CLI, then run from this directory:
+## API contracts
 
-```sh
-supabase start
-supabase status
-```
+Saved-inventory endpoints verify the Supabase session. JSON mutations require a matching Origin and `Content-Type: application/json`. Ownership is derived from the session, never accepted from a body. Personalized responses use `Cache-Control: private, no-store` and vary on the session cookie.
 
-The first start applies all migrations. Put the local API URL and anon/publishable key printed by `supabase status` in `.env.local`. The included local configuration disables email confirmation for development only. Later migration changes can be applied with `supabase migration up --local`. `supabase db reset` recreates the local database and deletes its data, so use it only for a disposable development database.
+| Method | Route                     | Request and response                                                                                                                                                   |
+| ------ | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/items?q=charger`    | `{ items, limit }`. Non-empty search is capped at 200; an empty query returns the complete hierarchy snapshot with `limit: null`.                                      |
+| POST   | `/api/items`              | Validated item fields → `{ item }`, `201`. Optional `X-Inventory-Request-Id` supports idempotent creation.                                                             |
+| PUT    | `/api/items/:id`          | Full editable item fields plus `version` → `{ item }`. This is not a partial patch.                                                                                    |
+| DELETE | `/api/items/:id`          | `{ version }` → `{ deleted: true }`; refuses stale or invalid deletion.                                                                                                |
+| GET    | `/api/locations`          | `{ locations }`, including Room parent IDs and location versions.                                                                                                      |
+| POST   | `/api/locations`          | `{ name, parent_location_id? }` → `{ location }`, `201`; omit/null parent for a Space. Supports the creation-request header.                                           |
+| PATCH  | `/api/locations`          | `{ id, name }` → `{ location }`. Renames an existing location without changing its hierarchy.                                                                          |
+| DELETE | `/api/locations`          | `{ id, destinationId }` → `{ deleted: true }`; destination may be null only when the domain rules allow it.                                                            |
+| POST   | `/api/ask`                | `{ question, history? }` → `{ answer, citations, mode, notice?, changes?, inventoryResult?, scopeChoices?, clarification?, contextNotice? }`.                          |
+| GET    | `/api/inventory/contents` | Query `type=location\|container\|all`, scope `id` when needed, optional `offset` and `revision` → a structured scope page.                                             |
+| GET    | `/api/dashboard`          | Per-user activity groups, summary and a grounded suggestion.                                                                                                           |
+| POST   | `/api/dashboard/visit`    | `{ asOf }` → `{ acknowledged: true }`; acknowledge only the exact successfully rendered briefing.                                                                      |
+| GET    | `/api/items/:id/photo`    | Authenticated ownership check → redirect to a temporary signed Storage URL.                                                                                            |
+| POST   | `/api/ask/local`          | Development-only, same-origin `{ question, history?, items, locations? }`; uses the supplied sample snapshot rather than a saved account. Returns `404` in production. |
 
-```sh
-npm run dev
-```
+CRUD JSON bodies are bounded to 16,000 bytes. Ask accepts up to 128,000 bytes; the development snapshot endpoint accepts up to 8,000,000 bytes, 5,000 records and 1,000 locations. Questions are limited to 1,000 characters and history to six bounded exchanges. Limits apply to actual streamed bytes, not just the claimed Content-Length.
 
-Supabase Studio: http://localhost:54323. The API and dashboard use Supabase for authenticated saved inventory; the embedded PGlite database is only used by automated migration tests.
+Errors use `{ error }`: `400` invalid input, `401` missing authentication, `403` forbidden/origin mismatch, `404` unavailable record/scope, `405` unsupported method, `409` stale/conflicting state, `413` oversized body, `415` non-JSON input, `503` missing setup/storage unavailable, and `500` an unexpected failure. Unknown/foreign record handling does not grant access to another owner's data.
 
-## Private item photos
+The [handlers](src/lib/handlers.ts), [HTTP boundary](src/lib/http.ts), [repository](src/lib/repository.ts) and [request context](src/lib/context.ts) are the source contracts. Supporting tests exercise both HTTP failures and database policies.
 
-Signed-in users can upload JPG, PNG, or WebP photos up to 5 MB. Files go directly to the private `inventory-photos` Supabase bucket with an opaque, owner-specific path. The existing version-checked item update saves that path in `attributes.image_path`, so photos return after reloading or signing in on another device. Sample inventory keeps its photos in memory and labels them session-only.
+## Use Jarvis
 
-Apply `supabase/migrations/202609160001_private_photos.sql` after the inventory and container migrations. It creates the private bucket, restricts file size/formats, and adds owner-only read/upload/delete policies. No extra environment variables or service-role key are required. Sign in through the dashboard to upload photos to your account.
+Jarvis lives in the Dashboard conversation. Try:
 
-The app checks ownership through `/api/items/:id/photo` and redirects to a 60-second signed URL. Treat a signed URL as temporary access to that image. Photo components bypass Next.js image optimization so authentication cookies reach the reader; the reader response is private and uncached. The stored item contains an object path, never an expiring URL. The upload pattern follows [Supabase Storage access control](https://supabase.com/docs/guides/storage/security/access-control) and [standard uploads](https://supabase.com/docs/guides/storage/uploads/standard-uploads).
+- “Show everything in Home” — full location scope, including Rooms and nested Containers, with counts and paginated results.
+- “Pack me for camping” — focused questions about missing trip details; answer what you know or say “basic list” or “assume” to proceed provisionally.
+- “What camera accessories do I have?” — matching records with links to item details.
 
-A failed upload/save leaves the previous photo visible and reports that saving was not confirmed. Reload saved inventory after an ambiguous save failure. New objects never overwrite old objects. Replaced photos, uploads whose item save failed, and photos of deleted items are retained privately for now; automated cleanup is not implemented. Duplicated items can reference the same photo. When cleaning up the bucket through the Storage API or dashboard, remove only paths no item references, after a grace period for in-flight saves. Do not delete Storage metadata rows directly.
+### Retrieval, clarification and grounding
 
-To verify a configured project, provide two different disposable confirmed accounts using `SMOKE_EMAIL`/`SMOKE_PASSWORD` and `SMOKE_OTHER_EMAIL`/`SMOKE_OTHER_PASSWORD` in `.env.local`, then run:
+Exact scope questions use structured inventory results independently of inference. A Space includes direct records, its Rooms and recursive Container contents; a Container includes its descendants. Duplicate names require selection by full path. Each page reports its resolved scope/path, `total`, `offset`, `limit`, `nextOffset`, `complete` and a `revision` fingerprint, with at most 100 records within a 240 KB UTF-8 record budget. The UI accumulates pages without duplicate IDs. Continuing against changed inventory/path state returns `409`, prompting a restart rather than mixing snapshots. A page's `complete` flag is not a substitute for counting all accumulated pages.
 
-```sh
-npm run test:photos
-```
+For open-ended questions, each saved request shares a complete account snapshot across bounded retrieval and catalogue tools. The model sees a compact category/catalogue overview and can search for full evidence beyond the initial matches. Tool result pages contain at most 20 full facts within 12,000 characters; they expose continuation offsets. Descriptions remain available for validated edits, while oversized attributes are omitted from model facts. A compact overview is a discovery aid, not proof that the first page is the entire inventory.
 
-The smoke test uploads a synthetic one-pixel PNG, reloads its item/photo through a fresh session, replaces the photo, tests stale updates and cross-account/anonymous access, and cleans up its own test records and objects. It does not verify browser cookies: also upload a photo in the signed-in dashboard, reload, open it from a second device, and verify that a different account cannot open the original `/api/items/:id/photo` URL.
+Materially incomplete packing requests first receive one focused bundle of up to three questions, without a model call: destination/expected conditions, length and camping style when relevant. User-supplied answers remain attached to the trip; a new trip does not inherit the previous destination's weather. Partial, unknown, “basic list” and “assume” replies proceed with labeled provisional assumptions. Exact inventory scopes and explicit edits bypass this trip questionnaire. Context is bounded to the recent session conversation, not stored as a durable trip plan.
 
-## Environment variables
+Packing retrieval separates available owned records from general supplies to check. Zero stock, lent and disposed items are not packable. Missing personal-essential cards can receive a separately labeled, bounded review section using retrieved record evidence; these are not automatically packed, medical instructions or inferred purchases. Explicit packing exclusions remain read-only revisions. Product suitability, weather protection and accessory compatibility are not guaranteed by a matching record name.
 
-| Variable                               | Requirement               | Purpose                                              |
-| -------------------------------------- | ------------------------- | ---------------------------------------------------- |
-| `NEXT_PUBLIC_SUPABASE_URL`             | Required for real storage | Supabase project API URL                             |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Required for real storage | Public browser key; RLS protects records             |
-| `AI_PROVIDER`                          | Default `search`          | `search`, `google`, `openai-compatible`, or `claude` |
-| `AI_BASE_URL`                          | Compatible inference      | Server-only URL ending in `/v1`                      |
-| `AI_MODEL`                             | Compatible inference      | Exact installed/hosted model ID                      |
-| `AI_API_KEY`                           | Optional                  | Server-only compatible provider key                  |
-| `ANTHROPIC_API_KEY`                    | Only for Claude           | Server-only hosted API key                           |
-| `ANTHROPIC_MODEL`                      | Only for Claude           | Exact model ID available to your account             |
-| `SMOKE_EMAIL`, `SMOKE_PASSWORD`        | Integration test only     | Disposable confirmed account                         |
+The graph allows at most four model invocations, up to four tool calls in each of the first three rounds, zero automatic model retries, 1,200 output tokens per generation and a 25-second graph deadline. The fourth invocation disables tools and requests a final grounded answer instead of offering a search that cannot be executed within the budget. The compatible and Claude adapters also have a 20-second call timeout. Invalid arguments receive bounded corrective feedback; invalid JSON/schema, unknown citations, provider failures or exhausted budgets produce an honest fallback rather than a successful AI label. Optional internal diagnostics contain reason codes, counts and timings—not prompts, inventory text or raw provider errors.
 
-Keep `.env.local` out of version control. No service-role credentials are needed.
+### Explicit inventory changes
 
-## Optional open-source inference
+With inference enabled, requests such as “Add a tent in College, category Camping”, “Rename my backpack to Hiking backpack” and “Tag my camera with travel” can prepare changes. Editable fields include name, description, category, tags, quantity/unit, status, condition and placement in an existing location or uniquely resolved Container. There is no delete or ownership-change tool.
 
-Install [Ollama](https://ollama.com/) and start its local service. The documented model, [Qwen3-8B](https://huggingface.co/Qwen/Qwen3-8B), uses Apache-2.0; model licenses vary, so check the exact model you substitute.
+At most five changes are prepared per request. The UI validates the batch and checks current item versions before applying it through the normal inventory store. Only applied records receive an Added/Updated confirmation. A partial save identifies completed changes and reports unapplied ones without silently retrying. Model-disabled search cannot perform these edits. Packing-list suggestions, clarification replies and exclusions do not modify inventory.
 
-```sh
-ollama pull qwen3:8b
-```
+### Model configuration and privacy
 
-Set these values, keeping the Supabase variables:
+The default in `.env.example` is `AI_PROVIDER=search`: no model calls, deterministic retrieval and basic packing/context handling. AI answers and Jarvis item add/edit tools require an enabled model. Jarvis does not have live weather access.
+
+Configure one provider in `.env.local`, then restart the server:
+
+| `AI_PROVIDER`       | Required settings                                                                  |
+| ------------------- | ---------------------------------------------------------------------------------- |
+| `search`            | None; no inference                                                                 |
+| `google`            | `AI_MODEL` and `AI_API_KEY` for a Gemini model available to your account           |
+| `openai-compatible` | `AI_BASE_URL` ending in `/v1`, `AI_MODEL`, and `AI_API_KEY` if the server needs it |
+| `claude`            | `ANTHROPIC_MODEL` and `ANTHROPIC_API_KEY`                                          |
+
+Ollama can use `openai-compatible` with `AI_BASE_URL=http://127.0.0.1:11434/v1` and a locally installed tool-capable model. Google uses its native adapter and ignores `AI_BASE_URL`.
+
+For example, with `qwen3:8b` installed in Ollama:
 
 ```dotenv
 AI_PROVIDER=openai-compatible
@@ -159,129 +199,65 @@ AI_MODEL=qwen3:8b
 AI_API_KEY=
 ```
 
-Restart Next.js. Jarvis runs a LangGraph generate → search → generate loop through LangChain. The model expands the user's intent into inventory searches, then returns a cited answer. The `/no_think` instruction requests Qwen's non-thinking mode. The configured model must support tool calling. Unavailable models, timeouts, and invalid answers produce labeled search results.
+For Google, choose an available Gemini model with tool calling and set `AI_PROVIDER=google`, `AI_MODEL` and `AI_API_KEY`; the native adapter preserves tool-call signatures. For Claude, set `AI_PROVIDER=claude`, `ANTHROPIC_MODEL` and `ANTHROPIC_API_KEY`. No model is installed or downloaded by the app. Keep the license and hardware/service costs of the selected model separate from the open-source license of its adapter.
 
-Cost controls: at most four model turns, four tool calls per turn (at most twelve executed searches), no model retries, 1,200 output tokens per generation, and a 25-second graph deadline. Each retrieval returns at most 20 facts within 12,000 characters; full descriptions (up to 2,000 characters) are retained so edits cannot lose unseen notes; large attributes are omitted. The compatible and Claude adapters additionally have a 20-second call timeout. Questions are limited to 1,000 characters and history to the last six exchanges. There is no automatic provider failover or vector database.
+Provider keys stay server-side. Hosted inference sends retrieved inventory facts and recent chat to that provider—even when the inventory itself is a local sample. Use local inference if those facts must stay on your machine. Sample-mode inference is development-only; production Jarvis uses authenticated saved inventory.
 
-### Local Jarvis demo
+Provider errors or invalid answers fall back to labeled search results. Citations are checked, but model prose, suitability and completeness still need review. See [reliability and limits](docs/jarvis-reliability.md), [trip clarification](docs/jarvis-clarification.md), and [provider configuration](src/lib/provider.ts).
 
-Run `npm run dev` and open the dashboard. Without Supabase, each chat request sends the current session's inventory snapshot to `/api/ask/local`, including item edits, explicit locations and container breadcrumbs. This endpoint is same-origin, development-only, bounded to 5,000 records, 1,000 locations and an 8 MB body; excessive requests fail explicitly rather than silently dropping inventory. It does not write or persist inventory. Local sample inventory and chat reset on reload. With a saved Supabase session, `/api/ask` uses the authenticated repository and the same retrieval/answer contract.
+## Private item photos
 
-Try “Pack me for camping,” “What can I use to take pictures?” and “Show my camera accessories.” The sample includes a camera, tripod, and SD card. Ask follow-ups such as “Where are those?” or “Remove the camera from that list.” Click a result to open its item details. Camping answers distinguish usable possessions from suggested essentials; product suitability and accessory compatibility still need checking.
+Signed-in users can upload JPG, PNG or WebP files up to 5 MB directly to the private `inventory-photos` bucket. The [photo migration](supabase/migrations/202609160001_private_photos.sql) configures bucket limits and owner-only access policies. Upload paths are opaque and owner-specific, and new uploads never overwrite an existing object. No service-role key is needed.
 
-Jarvis can also create and edit inventory records. Try “Add a tent in College, category Camping,” “Rename my backpack to Hiking backpack,” or “Tag my camera with travel.” It can edit name, description, category, tags, quantity/unit, status, condition, and placement in an existing place or uniquely named container. It does not expose deletion or ownership changes. Durable items retain quantity 1; stock counts use consumables.
+The version-checked item update stores the object path in `attributes.image_path`, not an expiring URL. `/api/items/:id/photo` verifies the session and item ownership before issuing a 60-second signed URL; treat that URL as temporary access to the image. Photo components bypass Next.js image optimization so the private reader receives the user's cookies. The redirect response is private and uncached. Sample photos remain session-only.
 
-Add/edit tools prepare at most five changes per request. The UI validates the complete batch and checks item versions before applying changes through the normal store. Only successfully applied records receive an “Added” or “Updated” confirmation. Saved inventory still uses the authenticated CRUD API with database ownership and version checks. If a save fails partway through a batch, the response identifies completed changes and reports that the remaining changes were not applied; it does not automatically retry. Packing-list suggestions and revisions do not mutate inventory. Model-disabled search cannot add/edit items.
+If upload or attachment saving fails, the previous saved photo remains visible and the UI reports an unconfirmed save. Reload after an ambiguous response. Replaced photos, orphan uploads and photos belonging to deleted items remain private in Storage; automatic garbage collection is not implemented. Duplicated items can share a photo path, so cleanup must check that no item references it and allow for in-flight saves. Use the Storage API/dashboard rather than deleting Storage metadata rows directly.
 
-For Gemini, use the native Google adapter so tool-call thought signatures are preserved:
+## Observation and reconciliation boundary
 
-```dotenv
-AI_PROVIDER=google
-AI_MODEL=gemini-3.5-flash-lite
-AI_API_KEY=your-google-ai-studio-key
-```
+The [reconciliation module](src/lib/reconciliation.ts) is an implemented pure validation/review function, not a camera-ingestion feature. It accepts an observation envelope with owner/item identity, source and event ID, confidence, observation time, base version and a proposed quantity/status/location patch. It validates the proposed state against the item contracts and returns `decision: review` with `version_conflict`, `stale_observation`, `low_confidence` or `confirmation_required`.
 
-`AI_BASE_URL` is ignored by the native Google adapter. Keys remain server-only. Local inventory means the records live in this browser session; with hosted inference, retrieved item facts and recent chat are sent to that configured provider. Choose Ollama to keep inference local too. The default `AI_PROVIDER=search` uses a small deterministic fallback for camping, photography, and accessories, and does not understand conversational follow-ups.
+Even a confidence of 1 does not write inventory. No camera detector, ingestion endpoint or observation-confirmation UI is implemented. A later integration would need verified identity, deduplication, persistence and explicit human confirmation through version-checked mutations; the current function deliberately keeps evidence separate from confirmed state.
 
-An optional live integration test sends only a fabricated camera fixture to the configured provider:
+## Checks
 
 ```sh
-JARVIS_LIVE_TEST=1 node --env-file=.env.local node_modules/vitest/vitest.mjs run tests/jarvis-live.test.ts
+npm run release:check # formatting, lint, typecheck, tests and production build
+npm test              # local tests; live-provider tests are opt-in
+npm run check         # lint, typecheck and tests without the production build
+npm run build         # production compilation and route generation
 ```
 
-Normal `npm test` skips this test and makes no model calls. The native adapter follows [LangChain's Google integration](https://docs.langchain.com/oss/javascript/integrations/chat/google).
-
-To opt into Claude, set `AI_PROVIDER=claude`, `ANTHROPIC_API_KEY`, and `ANTHROPIC_MODEL`. The same validated search and item-change contract applies. Provider errors or invalid/unknown citations produce a labeled search fallback. Model prose can still be wrong even with valid citations; the UI offers source records to verify facts.
-
-## Schema and domain rules
-
-- `items`: one durable possession per row (`quantity = 1`) or a consumable stock with nonnegative decimal quantity and a unit. Durable rows have no reorder threshold. For a spool or battery, use a durable row with flexible remaining-capacity attributes, or a consumable row measured in grams/units, depending on what you track.
-- `container` items are durable folder-like records. A root container belongs to a reusable location; a nested item or container belongs to one parent container. Its effective location and breadcrumb path are derived from the root, so moving a parent moves the visible subtree without rewriting every child.
-- Container cycles, cross-owner parents, non-container parents, occupied-container type changes, and deletion of non-empty containers are rejected by both the application and the database migration.
-- `locations`: owner-specific Spaces and optional Rooms in the same table. A Space has no parent; a Room belongs to exactly one root Space. Existing locations remain Spaces until explicitly created as Rooms. Names are unique among siblings, so `Home → Bedroom` and `Cabin → Bedroom` may coexist. Owner-matching foreign keys protect item placement and room parents.
-- Creation starts as a browser draft and writes only when Add submits a valid name and placement. The client keeps one `X-Inventory-Request-Id` UUID per draft; explicit retries with the same key return the same record rather than creating duplicates. A failed response can be uncertain: retain the draft/key and reload saved inventory before retrying. A confirmed insert still returns success if only its subsequent hierarchy read fails.
-- `inventory_observations`: append-only source events with confidence, event identity, observed/received times, base version, and proposed patch. Unique `(user_id, source, source_event_id)` prevents duplicate events. Owner-matching references prevent foreign item observations.
-- `inventory_activity`: owner-scoped audit events created by database triggers for item creation, edits, moves, and deletion. Events capture the owning room, item name, action channel (`user` or `jarvis`), and time at which the mutation occurred. The dashboard does not invent history for records that predate this migration.
-- `inventory_dashboard_visits`: the last dashboard briefing that the user explicitly acknowledged after it rendered. “Since your last visit” is used only when this durable marker exists; first visits show activity recorded in the past 30 days.
-- Tags are normalized lowercase arrays. Attributes are bounded JSON objects. Status: `active`, `stored`, `lent`, `disposed`. Condition: `new`, `good`, `fair`, `poor`, `unknown`.
-- Updates increment `version` in Postgres. Edit/delete requests include the version they read; stale operations return `409`.
-- Deletion is permanent and removes associated observations. Use `disposed` to retain an inventory entry and its history.
-- Listing returns at most 200 records per search. A connected UI must make this limit visible; refine the query for larger inventories. Filters/statistics apply to the current result set. Search uses parameterized literal terms, with OR matching across names, notes, categories, locations, tags and attributes.
-
-## API
-
-Every production route requires the verified Supabase session cookie. Write requests also require an `Origin` matching the request URL and JSON content type. Request bodies are bounded to 16 KB.
-
-| Method | Route                     | Input / result                                                                         |
-| ------ | ------------------------- | -------------------------------------------------------------------------------------- |
-| GET    | `/api/items?q=charger`    | `{ items, limit: 200 }`                                                                |
-| POST   | `/api/items`              | Item fields → `{ item }`, 201                                                          |
-| PUT    | `/api/items/:id`          | Full editable item fields plus `version` → `{ item }`                                  |
-| DELETE | `/api/items/:id`          | `{ version }` → `{ deleted: true }`                                                    |
-| GET    | `/api/locations`          | `{ locations }`                                                                        |
-| POST   | `/api/locations`          | `{ name }` → `{ location }`, 201                                                       |
-| POST   | `/api/ask`                | `{ question }` → `{ answer, citations, mode, notice? }`                                |
-| GET    | `/api/dashboard`          | Per-user activity groups, summary, and grounded suggestion                             |
-| POST   | `/api/dashboard/visit`    | `{ asOf }` → `{ acknowledged: true }`                                                  |
-| GET    | `/api/inventory/contents` | `type=location\|container\|all`, scope `id`, optional `offset` → structured scope page |
-
-Apply `202610130001_rooms_creation.sql` after the existing migrations before deploying this application version. It adds room hierarchy, location versions, sibling name indexes, and idempotent creation RPCs. It preserves existing root locations and inventory; it does not infer room parents from names. A root Space with Rooms cannot be deleted until its Rooms have been removed.
-
-Jarvis uses the complete current account snapshot for its bounded overview/search tools, with one shared snapshot per request. Exact location/container questions such as “Show everything in Home” use structured results independently of the model: a Space includes its direct items, all Rooms, and nested container contents; a container scope includes all descendants. Duplicate names require a full path. Scope pages contain at most 100 records within a 240 KB UTF-8 record budget and report `total`, `offset`, `nextOffset`, and `complete`; load subsequent pages instead of treating model citations as a full list. Send the returned `revision` when continuing; matching inventory or path changes produce a `409` so the query can restart with current records. Model context remains limited to 20 full facts/12,000 characters per retrieval and a compact paged overview. Packing fallbacks use available owned records and label general essentials as checks rather than possessions.
-
-The dashboard endpoints require the same verified session as inventory CRUD. After a dashboard response renders successfully, acknowledge its exact `asOf` value; do not acknowledge loading or failed responses. Suggestions are deterministic and appear only when current items in the same non-empty category span at least two owning spaces. Opening a suggestion starts a read-only Jarvis planning conversation and does not mutate inventory.
-
-Ordinary mutations are attributed to the signed-in user. The existing item mutation routes accept `X-Inventory-Actor: jarvis` only for changes explicitly prepared and applied through Jarvis; absent headers default to `user`, and other values are rejected. Attribution identifies the application action channel, not a separate security principal.
-
-Ownership fields are never accepted from callers. Error responses use `{ error }`: 400 invalid input, 401 missing auth, 403 forbidden/origin mismatch, 404 unknown/foreign item, 409 stale/conflicting data, 413 excessive body, 415 non-JSON body, 503 missing setup/storage unavailable. All personalized responses use `private, no-store`.
-
-## Future camera integration
-
-A vision adapter should identify a candidate item and produce an observation envelope. Example:
-
-```json
-{
-  "user_id": "11111111-1111-4111-8111-111111111111",
-  "item_id": "22222222-2222-4222-8222-222222222222",
-  "source": "camera",
-  "source_event_id": "camera-session-12:event-57",
-  "confidence": 0.94,
-  "observed_at": "2026-09-13T12:00:00Z",
-  "base_version": 3,
-  "proposed_patch": { "status": "stored" }
-}
-```
-
-Call `reconcile(item, observation)`. It validates identity and proposed quantities, checks version and time, and returns `decision: "review"` with `confirmation_required`, `low_confidence`, `version_conflict`, or `stale_observation`. It never writes, even at confidence 1.0. A future authenticated ingestion route must derive `user_id` from the session, check destination ownership, deduplicate, persist the event, and expose explicit human confirmation through a version-checked writer. There is no ingestion or confirmation route yet. Observations are evidence; item fields are the current manually confirmed state.
-
-## Tests and verification
+Database tests use embedded PostgreSQL (PGlite), not a hosted Supabase project. For explicitly designated disposable test accounts, `.env.example` documents the smoke credentials:
 
 ```sh
-npm run release:check # formatting + lint + TypeScript + tests + production build
-# Or run checks separately:
-npm run check       # lint + TypeScript + core/HTTP/provider/Postgres tests
-npm run build       # production compilation and route generation
-npm run format:check
+npm run test:supabase # one account; temporary records are created and deleted
+npm run test:photos   # two accounts; photo persistence and isolation checks
 ```
 
-The database suite runs the real migration in **PGlite**, an embedded PostgreSQL engine, with two users, `auth.uid()` and authenticated/anonymous role fixtures. It executes RLS, quantity constraints, owner-matching foreign keys, stale updates, RPC search, append-only observation access and deduplication. It does not replace testing Supabase Auth/PostgREST in a configured project.
+Do not run smoke writes against real-user accounts. Local checks do not establish hosted Auth, persistence or cross-account behavior. Live-model evidence is limited, and the latest clarification flow has not been live-model tested. Detailed results are in [design-qa.md](design-qa.md).
 
-For a real integration smoke test, create a disposable confirmed Supabase user and set `SMOKE_EMAIL`/`SMOKE_PASSWORD` in `.env.local`:
+### What the checks establish
 
-```sh
-npm run test:supabase
-```
+- Unit and workflow tests cover domain validation, retrieval, clarification/history boundaries, paginated scope results, draft cancellation, safe creation retries, prepared changes, partial failures and stale responses after account/source changes.
+- HTTP tests exercise authentication, same-origin checks, body/content-type limits and error contracts. Database tests apply real migrations in PGlite with two users and authenticated/anonymous role fixtures, exercising constraints, RLS, ownership, RPCs and stale-write rejection.
+- `test:supabase` uses `SMOKE_EMAIL`/`SMOKE_PASSWORD` for a disposable confirmed account, creates temporary records, checks Auth/search/version conflicts and deletes only its own fixtures. It is not by itself a complete deployed-app/Room/idempotency acceptance test.
+- `test:photos` additionally needs `SMOKE_OTHER_EMAIL`/`SMOKE_OTHER_PASSWORD`; it exercises fresh-session reads, replacement, stale updates and cross-account/anonymous Storage access, then cleans up its fixtures. Signed-in browser cookies and second-device behavior still require their own check.
+- Live-provider tests are opt-in and use fabricated inventory. The historical test prompts predate the clarification flow; they are not evidence of current live tailoring without a new scoped run. Local success does not establish provider reliability or a production success rate.
 
-This script signs in through real Auth, creates its own temporary location/item, checks RPC search and stale update behavior, then deletes only those test records and signs out. It does not use admin credentials or print credentials. See `docs/verification.md` for checks performed during delivery and external dependencies still needing configuration.
+## Deployment and operational limits
 
-## Deploy to Vercel
+- Build with `npm run build`; run a Node server with `npm start`, or use Vercel's Next.js setup. Configure the target environment, apply pending migrations, and set Supabase's Site URL and confirmation redirect to the deployed HTTPS hostname.
+- A deployed server cannot use Ollama at your laptop's `localhost`. Use a reachable inference endpoint or leave `AI_PROVIDER=search`.
+- Saved APIs verify the session and enforce owner-scoped access through PostgreSQL RLS. Edits use version checks; deletion is permanent. Use `disposed` if you want to keep a record.
+- Photos accept JPG, PNG and WebP up to 5 MB in a private Supabase bucket. Replaced, orphaned and deleted-item photos are retained; automatic cleanup is not implemented.
+- Model calls are bounded, but shared per-user quotas and provider spend limits are not implemented. Add them before exposing paid inference broadly.
+- Trip-context recognition uses conservative English-language rules and bounded session history. It is not a general travel planner or durable memory system.
+- Hosted verification remains deferred. Review the [setup and rollout prerequisites](docs/verification.md) rather than treating a successful build or push as a verified deployment.
 
-1. Import the existing `PaperTop/inventory` GitHub repository into Vercel. Use the repository root (`.`) as Root Directory.
-2. Choose Next.js and Node 22.x. Install: `npm ci`; build: `npm run build`. No custom output directory is needed.
-3. Set the two public Supabase variables in the intended Vercel environments. Keep `AI_PROVIDER=search` initially.
-4. Apply all pending migrations to that environment's Supabase database before first use.
-5. Set Supabase Site URL to the deployed HTTPS URL and allow its `/auth/confirm` URL. Configure preview redirect URLs intentionally; use a separate Supabase development project for previews.
-6. Deploy. Test account creation/confirmation, login/logout, CRUD, search, and two-user isolation. CI runs lint/typecheck/tests/build on pushes and pull requests.
-7. To enable inference on Vercel, use a secured, remotely reachable compatible endpoint or the opt-in Claude adapter. **Vercel cannot reach Ollama running on your laptop at localhost.** Keep API keys server-only. The Ask route declares a 30-second maximum, with a 20-second provider timeout.
+## Further reading
 
-The app can also run on a regular Node server with `npm run build` and `npm start`; it has no required Vercel-only APIs. When exposing a paid model publicly, add shared per-user rate limits/quotas and provider spend limits first. This MVP bounds each request but does not impose a shared daily spending quota. Hosted Supabase, Vercel and hosted model services have their own service plans and terms; permissive source licenses do not imply free infrastructure.
+- [Technology and cost decisions](docs/technology.md)
+- [Jarvis reliability](docs/jarvis-reliability.md) and [clarification behavior](docs/jarvis-clarification.md)
+- [Verification and rollout plan](docs/verification.md) and [QA evidence](design-qa.md)
+- Source: [dashboard](src/components/liquid-dashboard.tsx), [API handlers](src/lib/handlers.ts), [database repository](src/lib/repository.ts), [domain validation](src/lib/inventory.ts)

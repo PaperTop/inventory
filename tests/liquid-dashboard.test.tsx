@@ -509,7 +509,10 @@ describe("liquid dashboard interactions", () => {
       screen.getByRole("button", { name: "Close item details" }),
     );
     await user.click(screen.getByRole("button", { name: "Open Jarvis" }));
-    await user.type(within(chat).getByRole("textbox"), "Pack me for camping");
+    await user.type(
+      within(chat).getByRole("textbox"),
+      "Pack me for camping — basic list",
+    );
     await user.click(
       within(chat).getByRole("button", { name: "Send to Jarvis" }),
     );

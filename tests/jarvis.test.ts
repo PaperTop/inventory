@@ -60,7 +60,7 @@ describe("Jarvis inventory retrieval", () => {
       }),
     };
     const result = await askInventory(
-      "Pack me for camping",
+      "Pack me for camping — basic list",
       { search: async (q) => searchInventory(fixture, q) },
       provider,
     );
@@ -82,14 +82,17 @@ describe("Jarvis inventory retrieval", () => {
           itemIds: ["bag"],
         }),
       },
-      [{ question: "Pack me for camping", answer: result.answer }],
+      [{ question: "Pack me for camping — basic list", answer: result.answer }],
     );
     expect(excluded.citations.map((row) => row.id)).not.toContain("guard");
   });
 
   it("keeps packing revisions grounded when the provider is unavailable", async () => {
     const history = [
-      { question: "Pack me for camping", answer: "Suggested starting list." },
+      {
+        question: "Pack me for camping — basic list",
+        answer: "Suggested starting list.",
+      },
     ];
     const removed = await askInventory(
       "Remove the Compact camera",
@@ -122,7 +125,10 @@ describe("Jarvis inventory retrieval", () => {
     ).toBe(true);
   });
   it("assembles a camping list from usable possessions without inventing missing gear", async () => {
-    const result = await askInventory("Pack me for camping", reader);
+    const result = await askInventory(
+      "Pack me for camping — basic list",
+      reader,
+    );
     expect(result.citations.map((i) => i.id)).toEqual(
       expect.arrayContaining([
         "bag",
@@ -161,7 +167,7 @@ describe("Jarvis inventory retrieval", () => {
   });
   it("does not reject a packing-list edit as an inventory mutation", async () => {
     const result = await askInventory(
-      "Add a camera to my camping packing list",
+      "Add a camera to my camping packing list — basic list",
       reader,
     );
     expect(result.citations.map((i) => i.id)).toContain("camera");
@@ -182,7 +188,7 @@ describe("Jarvis inventory retrieval", () => {
       },
       [
         {
-          question: "Pack me for camping",
+          question: "Pack me for camping — basic list",
           answer: "Your packing list: backpack and camera.",
         },
       ],

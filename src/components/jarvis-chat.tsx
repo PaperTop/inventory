@@ -130,11 +130,17 @@ export function JarvisChat({
         ? await askApi(question, history)
         : await askLocalApi(question, facts, history, locations);
     } catch {
-      result = await askInventory(question, {
-        search: async (query) => searchFacts(facts, query),
-      });
-      result.notice =
-        "Jarvis could not reach the AI service. Showing local search results; follow-up context needs AI.";
+      result = await askInventory(
+        question,
+        {
+          search: async (query) => searchFacts(facts, query),
+        },
+        undefined,
+        history,
+      );
+      if (!result.clarification)
+        result.notice =
+          "Jarvis could not reach the AI service. Showing local search results using your conversation context.";
     }
     if (!mounted.current) return;
     if (result.changes?.length) {
@@ -232,8 +238,17 @@ export function JarvisChat({
               <>
                 <small className={styles.assistantSource}>
                   {turn.source} ·{" "}
-                  {turn.result.mode === "ai" ? "AI answer" : "Search results"}
+                  {turn.result.clarification
+                    ? "Trip questions"
+                    : turn.result.mode === "ai"
+                      ? "AI answer"
+                      : "Search results"}
                 </small>
+                {turn.result.contextNotice && (
+                  <p className={styles.assistantNotice}>
+                    {turn.result.contextNotice}
+                  </p>
+                )}
                 <p className={styles.assistantAnswer}>{turn.result.answer}</p>
                 <JarvisInventoryResults
                   result={turn.result}

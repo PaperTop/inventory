@@ -53,7 +53,7 @@ it("shows personal possessions outside initial matches, then retrieves their ful
     },
   });
   const result = await askInventory(
-    "Help me prepare for a weekend away",
+    "Help me prepare for a weekend away — basic list",
     { search: async (q) => searchFacts(rows, q) },
     provider,
   );
@@ -91,7 +91,7 @@ it("pages past the first 20 matches and validates citations from later pages", a
     },
   });
   const result = await askInventory(
-    "Prepare for a trip",
+    "Prepare for a trip — basic list",
     { search: async (q) => searchFacts(rows, q) },
     provider,
   );

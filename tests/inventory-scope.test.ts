@@ -186,7 +186,7 @@ it("grounds packing in the complete authenticated snapshot rather than the cappe
   const request = new Request("http://localhost/api/ask", {
     method: "POST",
     headers: { origin: "http://localhost", "content-type": "application/json" },
-    body: JSON.stringify({ question: "Pack me for camping" }),
+    body: JSON.stringify({ question: "Pack me for camping — basic list" }),
   });
   const response = await handleAsk(request, { userId: "owner", repository });
   const result = await response.json();
