@@ -177,18 +177,25 @@ At most five changes are prepared per request. The UI validates the batch and ch
 
 ### Model configuration and privacy
 
-The default in `.env.example` is `AI_PROVIDER=search`: no model calls, deterministic retrieval and basic packing/context handling. AI answers and Jarvis item add/edit tools require an enabled model. Jarvis does not have live weather access.
+The default in `.env.example` selects Claude Haiku 5.5. Add your server-only `ANTHROPIC_API_KEY` to enable AI answers and Jarvis item add/edit tools. Until a key is supplied, Jarvis uses deterministic search. Set `AI_PROVIDER=search` to explicitly disable model calls. Jarvis does not have live weather access.
 
 Configure one provider in `.env.local`, then restart the server:
+
+```dotenv
+AI_PROVIDER=claude
+ANTHROPIC_MODEL=claude-haiku-5-5
+ANTHROPIC_API_KEY=
+```
+
+Paste your Anthropic API key after the final `=`. For deployment, configure these same Claude variables in your hosting environment; local settings are not uploaded.
 
 | `AI_PROVIDER`       | Required settings                                                                  |
 | ------------------- | ---------------------------------------------------------------------------------- |
 | `search`            | None; no inference                                                                 |
-| `google`            | `AI_MODEL` and `AI_API_KEY` for a Gemini model available to your account           |
 | `openai-compatible` | `AI_BASE_URL` ending in `/v1`, `AI_MODEL`, and `AI_API_KEY` if the server needs it |
 | `claude`            | `ANTHROPIC_MODEL` and `ANTHROPIC_API_KEY`                                          |
 
-Ollama can use `openai-compatible` with `AI_BASE_URL=http://127.0.0.1:11434/v1` and a locally installed tool-capable model. Google uses its native adapter and ignores `AI_BASE_URL`.
+Ollama can use `openai-compatible` with `AI_BASE_URL=http://127.0.0.1:11434/v1` and a locally installed tool-capable model.
 
 For example, with `qwen3:8b` installed in Ollama:
 
@@ -199,7 +206,7 @@ AI_MODEL=qwen3:8b
 AI_API_KEY=
 ```
 
-For Google, choose an available Gemini model with tool calling and set `AI_PROVIDER=google`, `AI_MODEL` and `AI_API_KEY`; the native adapter preserves tool-call signatures. For Claude, set `AI_PROVIDER=claude`, `ANTHROPIC_MODEL` and `ANTHROPIC_API_KEY`. No model is installed or downloaded by the app. Keep the license and hardware/service costs of the selected model separate from the open-source license of its adapter.
+For Claude, set `AI_PROVIDER=claude`, `ANTHROPIC_MODEL` and `ANTHROPIC_API_KEY`. No model is installed or downloaded by the app. Keep the license and hardware/service costs of the selected model separate from the open-source license of its adapter.
 
 Provider keys stay server-side. Hosted inference sends retrieved inventory facts and recent chat to that provider—even when the inventory itself is a local sample. Use local inference if those facts must stay on your machine. Sample-mode inference is development-only; production Jarvis uses authenticated saved inventory.
 

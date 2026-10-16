@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { tripContext } from "./trip-context";
+import { conversationIntent, withoutGreeting } from "./conversation-intent";
 import {
+  fallbackNotice,
   failureReason,
   JarvisFailure,
   reportDiagnostic,
@@ -77,6 +79,7 @@ export interface AnswerProvider {
 }
 export type ChatTurn = { question: string; answer: string };
 export type AskResult = {
+  conversational?: boolean;
   contextNotice?: string;
   clarification?: boolean;
   answer: string;
@@ -186,6 +189,15 @@ export async function askInventory(
   history?: ChatTurn[],
 ): Promise<AskResult> {
   ({ question, history } = questionInput.parse({ question, history }));
+  const conversational = conversationIntent(question);
+  if (conversational)
+    return {
+      answer: conversational,
+      citations: [],
+      mode: "search",
+      conversational: true,
+    };
+  question = withoutGreeting(question);
   const priorScope = history?.some((turn) =>
     explicitScopeQuestion(turn.question),
   );
@@ -361,7 +373,11 @@ export async function askInventory(
           citations: [],
           mode: "search",
         }
-      : fallback;
+      : {
+          ...fallback,
+          notice:
+            "AI is not configured. Check the server provider, model and API key settings, then restart the server. Showing matching inventory records.",
+        };
   const answerStarted = performance.now();
   try {
     const evidence = new Map(items.map((item) => [item.id, item]));
@@ -484,8 +500,7 @@ export async function askInventory(
     });
     return {
       ...fallback,
-      notice:
-        "The AI answer was unavailable or could not be validated. No items were changed. Showing matching inventory records.",
+      notice: fallbackNotice(failureReason(error)),
     };
   }
 }

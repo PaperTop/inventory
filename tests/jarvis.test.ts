@@ -214,7 +214,7 @@ describe("Jarvis inventory retrieval", () => {
               },
             ],
           });
-        expect(String(messages.at(-1)?.content)).toContain("Smartphone");
+        expect(String(messages.at(-2)?.content)).toContain("Smartphone");
         return new AIMessage(
           JSON.stringify({
             answer: "Your smartphone can capture the moment.",

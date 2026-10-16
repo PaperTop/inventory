@@ -21,12 +21,6 @@
       "scope": "runtime"
     },
     {
-      "package": "@langchain/google",
-      "version": "0.2.6",
-      "license": "MIT",
-      "scope": "runtime"
-    },
-    {
       "package": "@langchain/langgraph",
       "version": "1.4.15",
       "license": "MIT",

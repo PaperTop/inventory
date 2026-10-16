@@ -64,8 +64,7 @@
   font: inherit;
 }
 .search:focus-within {
-  outline: 2px solid #299bff;
-  outline-offset: 2px;
+  border-color: #95aec5;
 }
 .search input::placeholder {
   color: #8ba6bf;

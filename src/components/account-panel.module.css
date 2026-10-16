@@ -54,8 +54,7 @@
 .primary:focus-visible,
 .secondary:focus-visible,
 .textButton:focus-visible,
-.close:focus-visible,
-.form input:focus-visible {
+.close:focus-visible {
   outline: 2px solid #b8e3ff;
   outline-offset: 4px;
 }

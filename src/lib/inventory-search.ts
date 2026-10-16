@@ -1,4 +1,4 @@
-import { queryTerms } from "./inventory";
+import { queryTerms, matchesInventoryTerm } from "./inventory";
 import type { InventoryFact, InventoryReader } from "./ask";
 
 // Small, transparent fallback for the demo. The model can expand any request
@@ -42,9 +42,9 @@ export function searchFacts(items: readonly InventoryFact[], query: string) {
       const score = terms.reduce(
         (sum, term) =>
           sum +
-          (item.name.toLowerCase().includes(term)
+          (matchesInventoryTerm(item.name.toLowerCase(), term)
             ? 3
-            : text.includes(term)
+            : matchesInventoryTerm(text, term)
               ? 1
               : 0),
         0,

@@ -81,7 +81,7 @@ it("pages past the first 20 matches and validates citations from later pages", a
             },
           ],
         });
-      page = JSON.parse(String(messages.at(-1)?.content));
+      page = JSON.parse(String(messages.at(-2)?.content));
       return new AIMessage(
         JSON.stringify({
           answer: "Supply 24 is in the bathroom cabinet.",

@@ -102,6 +102,27 @@ When item-edit tools are enabled and the user explicitly asks to add or edit an 
 Changes are prepared, not yet saved: the app applies them after validating your answer and will show its own success message. Until then say the changes are prepared, never that they were saved. You cannot physically pack, order or buy anything.
 Answer in concise plain text, using newlines or numbered lists, without Markdown formatting. Return only JSON with an answer string (at most 4000 characters) and an itemIds array (at most 20 actual IDs from current records you used). The itemIds array must ONLY contain exact ID strings from items returned in search_inventory results; never invent IDs or cite unretrieved items. An empty itemIds array is valid for no matches or a clarifying question. /no_think`;
 
+function answerText(response: AIMessage): string {
+  if (typeof response.content === "string") return response.content;
+  const text: string[] = [];
+  for (const block of response.content) {
+    if (
+      typeof block === "object" &&
+      block.type === "text" &&
+      typeof block.text === "string"
+    ) {
+      text.push(block.text);
+    } else if (
+      typeof block !== "object" ||
+      !["thinking", "redacted_thinking"].includes(block.type)
+    ) {
+      throw new JarvisFailure("answer_schema");
+    }
+  }
+  if (!text.length) throw new JarvisFailure("answer_schema");
+  return text.join("");
+}
+
 export function createReadOnlyAnswerGraph(
   model: ReadOnlyChatModel,
 ): AnswerProvider {
@@ -110,18 +131,21 @@ export function createReadOnlyAnswerGraph(
       if (state.calls >= 4) throw new JarvisFailure("tool_budget");
       const started = performance.now();
       let response: AIMessage;
+      const finalAnswer = state.calls === 3;
+      // Keep prior messages (including signed Claude thinking blocks) intact.
+      // Changing the system prompt between tool rounds invalidates that context.
+      const messages =
+        state.calls === 0
+          ? state.messages
+          : [
+              ...state.messages,
+              new HumanMessage(
+                finalAnswer
+                  ? "This is your final answer turn. Tools are unavailable. Return the required answer JSON now using only retrieved current records. State limitations or ask a clarifying question if evidence is insufficient; never invent possessions or IDs. Do not claim prepared changes have been saved."
+                  : `You have ${3 - state.calls} tool rounds remaining before the final answer. Prefer a few complementary short searches in parallel; stop once evidence is sufficient. Empty searches do not justify inventing missing possessions.`,
+              ),
+            ];
       try {
-        const finalAnswer = state.calls === 3;
-        const messages = [
-          new SystemMessage(
-            String(state.messages[0].content) +
-              "\n" +
-              (finalAnswer
-                ? "This is your final answer turn. Tools are unavailable. Return the required answer JSON now using only retrieved current records. State limitations or ask a clarifying question if evidence is insufficient; never invent possessions or IDs. Do not claim prepared changes have been saved."
-                : `You have ${3 - state.calls} tool rounds remaining before the final answer. Prefer a few complementary short searches in parallel; stop once evidence is sufficient. Empty searches do not justify inventing missing possessions.`),
-          ),
-          ...state.messages.slice(1),
-        ];
         response = await model.invoke(messages, {
           signal: state.signal,
           finalAnswer,
@@ -139,11 +163,16 @@ export function createReadOnlyAnswerGraph(
         });
         throw new JarvisFailure(reason);
       }
-      const finish = response.response_metadata?.finish_reason;
+      const finish =
+        response.response_metadata?.finish_reason ??
+        response.response_metadata?.stop_reason ??
+        response.additional_kwargs?.stop_reason;
       const normalizedFinish =
-        finish === "MAX_TOKENS" || finish === "length"
+        finish === "MAX_TOKENS" ||
+        finish === "length" ||
+        finish === "max_tokens"
           ? "length"
-          : finish === "STOP" || finish === "stop"
+          : finish === "STOP" || finish === "stop" || finish === "end_turn"
             ? "stop"
             : "other";
       reportDiagnostic(state.reader.diagnose, {
@@ -156,17 +185,16 @@ export function createReadOnlyAnswerGraph(
       });
       if (normalizedFinish === "length")
         throw new JarvisFailure("output_limit");
+      if (finish === "refusal") throw new JarvisFailure("refusal");
       if (response.tool_calls?.length) {
         if (state.calls >= 3 || response.tool_calls.length > 4)
           throw new JarvisFailure("tool_budget");
         return {
-          messages: [...state.messages, response],
+          messages: [...messages, response],
           calls: state.calls + 1,
         };
       }
-      if (typeof response.content !== "string")
-        throw new JarvisFailure("answer_schema");
-      let jsonString = response.content.trim();
+      let jsonString = answerText(response).trim();
       const codeBlockMatch = jsonString.match(
         /```(?:json)?\s*\n?([\s\S]*?)\n?```/i,
       );
@@ -188,7 +216,7 @@ export function createReadOnlyAnswerGraph(
       if (!parsed.success) throw new JarvisFailure("answer_schema");
       return {
         result: parsed.data,
-        messages: [...state.messages, response],
+        messages: [...messages, response],
         calls: state.calls + 1,
       };
     })

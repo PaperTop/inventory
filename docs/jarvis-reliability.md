@@ -1,5 +1,13 @@
 # Jarvis reliability investigation — 2026-10-15
 
+## Claude compatibility follow-up — 2026-10-16
+
+A native-adapter regression reproduced valid Claude thinking/text content blocks being rejected as `answer_schema`, causing deterministic fallback. The graph now extracts only explicit text blocks for JSON validation, never thinking or arbitrary rich content. Original signed blocks remain intact in tool history; turn reminders are appended rather than rewriting the system prompt. Claude's `stop_reason: max_tokens` is recognized as truncation, and refusals remain failures rather than invented answers.
+
+Claude receives a bounded 2,400-token output budget; Haiku 5.5 uses low effort to leave room for the answer. Other adapters retain their previous budget. Deadlines, zero retries, four model turns, citation checks and item-change validation remain unchanged. Fallback notices now distinguish missing configuration, authentication/model access, rate limits, timeout, truncation and invalid output without exposing provider bodies or credentials.
+
+Native-adapter tests use fabricated HTTP responses for a complete search round, signed thinking preservation, valid text extraction, truncation, refusal, foreign citations and HTTP errors. One separately enabled live smoke test with fabricated inventory completed successfully in approximately 2.9 seconds. This does not establish a universal success rate or enable production sample inference; the development-only sample endpoint restriction remains unchanged. No private inventory or database writes were used.
+
 ## Confirmed cause and scoped change
 
 The measured synthetic baseline reproduced `tool_budget`: the model requested another search on its fourth and final invocation. All four provider responses finished normally; this observed failure was not a timeout. The application had offered tools on a turn when it would reject any resulting tool call. The earlier 21.49-second fallback did not capture a reason and cannot retrospectively be classified.
@@ -8,7 +16,7 @@ Jarvis now tells the model how many tool rounds remain and reserves invocation f
 
 The existing four-invocation limit, up to four tool calls per permitted round, 13-read ceiling including the initial overview, 25-second graph deadline, zero provider retries, answer schema, citation-evidence check and prepared-change validation remain. There is no model replacement, increased deadline, retry-until-success, invented ownership or fallback relabeling. Exact location questions still use deterministic scoped pagination without model inference.
 
-The installed provider adapters accept per-invocation tool choice; the supporting primary references are [ChatGoogle bindTools](https://reference.langchain.com/javascript/langchain-google/index/ChatGoogle/bindTools) and [tool choice modes](https://reference.langchain.com/javascript/langchain-google-common/types/GoogleAIModelRequestParams/tool_choice). The implementation was also checked against the installed package types/converter code rather than assuming a different adapter version.
+The installed provider adapters accept per-invocation tool choice. The implementation was checked against the installed package types/converter code rather than assuming a different adapter version. The current Claude adapter preserves the same reserved final-answer turn.
 
 ## Sanitized internal diagnostics
 

@@ -243,9 +243,9 @@ it.each(["foreign-citation", "illegal-tool", "limited-answer"])(
               },
             ],
           });
-        expect(String((messages[0] as { content: string }).content)).toMatch(
-          /evidence is insufficient|never invent/,
-        );
+        expect(
+          String((messages.at(-1) as { content: string }).content),
+        ).toMatch(/evidence is insufficient|never invent/);
         return new AIMessage(
           JSON.stringify(
             outcome === "foreign-citation"
@@ -269,7 +269,7 @@ it.each(["foreign-citation", "illegal-tool", "limited-answer"])(
       createReadOnlyAnswerGraph({
         invoke: async (messages, options) => {
           // Count only tool reads from the diagnostic tool-message boundary below.
-          const previous = messages.at(-2) as { tool_calls?: unknown[] };
+          const previous = messages.at(-3) as { tool_calls?: unknown[] };
           if (previous?.tool_calls?.length) toolReads++;
           return invoke(messages, options);
         },

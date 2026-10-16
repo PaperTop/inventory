@@ -1,6 +1,5 @@
 import { ChatAnthropic } from "@langchain/anthropic";
 import { ChatOpenAI } from "@langchain/openai";
-import { ChatGoogle } from "@langchain/google";
 import {
   createReadOnlyAnswerGraph,
   inventoryToolDefinitions,
@@ -13,13 +12,9 @@ const MODEL_LIMITS = {
   maxTokens: 1_200,
   timeout: 20_000,
 } as const;
+const CLAUDE_LIMITS = { ...MODEL_LIMITS, maxTokens: 2_400 } as const;
 
 export type ModelConfiguration =
-  | ({
-      provider: "google";
-      model: string;
-      apiKey: string;
-    } & typeof MODEL_LIMITS)
   | ({
       provider: "openai-compatible";
       model: string;
@@ -30,29 +25,13 @@ export type ModelConfiguration =
       provider: "claude";
       model: string;
       apiKey: string;
-    } & typeof MODEL_LIMITS);
+    } & typeof CLAUDE_LIMITS);
 
 export type ModelFactory = (
   configuration: ModelConfiguration,
 ) => ReadOnlyChatModel;
 
 const createLangChainModel: ModelFactory = (configuration) => {
-  if (configuration.provider === "google") {
-    const model = new ChatGoogle({
-      model: configuration.model,
-      apiKey: configuration.apiKey,
-      platformType: "gai",
-      maxRetries: configuration.maxRetries,
-      maxOutputTokens: configuration.maxTokens,
-    }).bindTools(inventoryToolDefinitions);
-    return {
-      invoke: (messages, options) =>
-        model.invoke(messages, {
-          signal: options?.signal,
-          ...(options?.finalAnswer ? { tool_choice: "none" } : {}),
-        }),
-    };
-  }
   if (configuration.provider === "openai-compatible") {
     const model = new ChatOpenAI({
       model: configuration.model,
@@ -75,10 +54,12 @@ const createLangChainModel: ModelFactory = (configuration) => {
   const model = new ChatAnthropic({
     model: configuration.model,
     apiKey: configuration.apiKey,
-    temperature: 0,
     maxRetries: configuration.maxRetries,
     maxTokens: configuration.maxTokens,
     clientOptions: { timeout: configuration.timeout },
+    ...(configuration.model === "claude-haiku-5-5"
+      ? { outputConfig: { effort: "low" as const } }
+      : {}),
   });
   return {
     invoke: (messages, options) =>
@@ -93,15 +74,6 @@ export function configuredProvider(
   modelFactory: ModelFactory = createLangChainModel,
 ): AnswerProvider | undefined {
   const choice = process.env.AI_PROVIDER;
-
-  if (choice === "google") {
-    const apiKey = process.env.AI_API_KEY;
-    const model = process.env.AI_MODEL;
-    if (!apiKey || !model) return undefined;
-    return createReadOnlyAnswerGraph(
-      modelFactory({ provider: "google", model, apiKey, ...MODEL_LIMITS }),
-    );
-  }
 
   if (choice === "openai-compatible") {
     const baseURL = process.env.AI_BASE_URL;
@@ -129,7 +101,7 @@ export function configuredProvider(
         provider: "claude",
         model,
         apiKey,
-        ...MODEL_LIMITS,
+        ...CLAUDE_LIMITS,
       }),
     );
   }

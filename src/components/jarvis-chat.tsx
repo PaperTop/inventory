@@ -138,7 +138,7 @@ export function JarvisChat({
         undefined,
         history,
       );
-      if (!result.clarification)
+      if (!result.clarification && !result.conversational)
         result.notice =
           "Jarvis could not reach the AI service. Showing local search results using your conversation context.";
     }
@@ -238,11 +238,13 @@ export function JarvisChat({
               <>
                 <small className={styles.assistantSource}>
                   {turn.source} ·{" "}
-                  {turn.result.clarification
-                    ? "Trip questions"
-                    : turn.result.mode === "ai"
-                      ? "AI answer"
-                      : "Search results"}
+                  {turn.result.conversational
+                    ? "Jarvis"
+                    : turn.result.clarification
+                      ? "Trip questions"
+                      : turn.result.mode === "ai"
+                        ? "AI answer"
+                        : "Search results"}
                 </small>
                 {turn.result.contextNotice && (
                   <p className={styles.assistantNotice}>

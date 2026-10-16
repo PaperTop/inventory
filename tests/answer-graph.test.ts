@@ -36,7 +36,7 @@ describe("read-only LangGraph answer workflow", () => {
         calls++;
         if (options?.finalAnswer) {
           expect(calls).toBe(4);
-          expect(String(messages[0].content)).toMatch(/final answer/i);
+          expect(String(messages.at(-1)?.content)).toMatch(/final answer/i);
           return new AIMessage(
             JSON.stringify({
               answer:
@@ -106,7 +106,7 @@ describe("read-only LangGraph answer workflow", () => {
       async invoke(messages) {
         calls++;
         if (calls === 2) {
-          expect(String(messages.at(-1)?.content)).toContain("200 characters");
+          expect(String(messages.at(-2)?.content)).toContain("200 characters");
         }
         if (calls <= 2)
           return new AIMessage({
@@ -175,7 +175,7 @@ describe("read-only LangGraph answer workflow", () => {
     await expect(provider.answer(context)).rejects.toThrow();
   });
 
-  it("rejects rich content blocks instead of guessing at model output", async () => {
+  it("accepts text content blocks while validating their answer schema", async () => {
     const model: ReadOnlyChatModel = {
       async invoke() {
         return new AIMessage({
@@ -185,6 +185,9 @@ describe("read-only LangGraph answer workflow", () => {
     };
 
     const provider = createReadOnlyAnswerGraph(model);
-    await expect(provider.answer(context)).rejects.toThrow(/plain text/i);
+    await expect(provider.answer(context)).resolves.toEqual({
+      answer: "x",
+      itemIds: [],
+    });
   });
 });

@@ -9,11 +9,11 @@ const escape =
 const duration =
   /\b(?:\d+|one|two|three|four|five|six|seven|a)\s*[- ]?(?:night|day|week)s?\b|\b(?:weekend|overnight|day hike)\b/i;
 const conditions =
-  /\b(?:rain\w*|snow\w*|sunny|hot|warm|cold|cool|dry|wet|freezing|mild|winter|summer|spring|autumn|fall|\d+\s*°?[cf])\b/i;
+  /\b(?:rain\w*|snow\w*|sunny|clear skies|hot|warm|cold|cool|dry|wet|freezing|mild|winter|summer|spring|autumn|fall|\d+\s*(?:°?[cf]|degrees?(?:\s+(?:fahrenheit|celsius))?))\b/i;
 const destination =
-  /\b(?:in|to|near|at|around)\s+(?!camp\b|pack\b|a\b|the\b|my\b|be\b|go\b)[a-z][a-z -]{1,60}/i;
+  /\b(?:(?:in|to|near|at|around|for)\s+|destination\s*:?\s+)(?!camp(?:ing)?\b|pack\b|a\b|the\b|my\b|be\b|go\b|one\b|two\b|three\b|four\b|five\b|work\b|business\b)[a-z][a-z -]{1,60}/i;
 const style =
-  /\b(?:car camp\w*|backpack\w*|wild camp\w*|campsite|campground|tent|cabin|hotel|work|business|day hike|rv|camper)\b/i;
+  /\b(?:car camp\w*|driving|by car|backpack\w*|wild camp\w*|campsite|campground|tent|cabin|hotel|work|business|day hike|rv|camper)\b/i;
 
 export function tripContext(question: string, history: ChatTurn[] = []) {
   const last = history.at(-1);
@@ -34,6 +34,9 @@ export function tripContext(question: string, history: ChatTurn[] = []) {
     (pending ||
       revision.test(question) ||
       escape.test(question) ||
+      /\b(?:instead|change (?:it|that|the destination)|how about|let['’]s|actually|something useful)\b/i.test(
+        question,
+      ) ||
       duration.test(question) ||
       conditions.test(question) ||
       style.test(question)) &&
@@ -45,7 +48,7 @@ export function tripContext(question: string, history: ChatTurn[] = []) {
   const supplied = [...earlier, question].join("\n").slice(-4000);
   const bareDestination = (text: string) =>
     !escape.test(text) &&
-    /^(?!I\b|It\b|We\b|The\b|Not\b|Maybe\b)[A-Z][A-Za-z '-]{2,60}(?:,|[.!]|$)/.test(
+    /^(?!I\b|It\b|We\b|The\b|Not\b|Maybe\b)[A-Z][A-Za-z '-]{2,60}(?:\s+for\b|,|[.!]|$)/.test(
       text,
     );
   const knownBareDestination =

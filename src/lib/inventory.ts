@@ -123,6 +123,13 @@ export function queryTerms(query: string): string[] {
     ),
   ].slice(0, 16);
 }
+export function matchesInventoryTerm(text: string, term: string) {
+  // Short literal tokens such as "hi" and "SD" must not match inside
+  // unrelated words such as Clothing. Longer terms retain partial search.
+  return term.length < 3
+    ? (text.match(/[\p{L}\p{N}]+/gu) ?? []).some((word) => word === term)
+    : text.includes(term);
+}
 export function searchInventory(items: readonly Item[], query: string): Item[] {
   const terms = queryTerms(query);
   if (!terms.length) return [...items];
@@ -143,7 +150,13 @@ export function searchInventory(items: readonly Item[], query: string): Item[] {
       return {
         item,
         score: terms.reduce(
-          (s, t) => s + (name.includes(t) ? 3 : text.includes(t) ? 1 : 0),
+          (s, t) =>
+            s +
+            (matchesInventoryTerm(name, t)
+              ? 3
+              : matchesInventoryTerm(text, t)
+                ? 1
+                : 0),
           0,
         ),
       };

@@ -89,24 +89,34 @@ it("requires an explicit model and API key for Claude", () => {
   ).toBeUndefined();
 });
 
-it("supports the native Google adapter for signature-preserving Gemini tool calls", () => {
-  vi.stubEnv("AI_PROVIDER", "google");
-  vi.stubEnv("AI_API_KEY", "test-key");
-  vi.stubEnv("AI_MODEL", "gemini-test-model");
-  let configuration: ModelConfiguration | undefined;
-  const provider = configuredProvider((input) => {
-    configuration = input;
-    return {
-      async invoke() {
-        return new AIMessage("{}");
-      },
-    };
-  });
-  expect(provider).toBeDefined();
-  expect(configuration).toMatchObject({
-    provider: "google",
-    model: "gemini-test-model",
-    apiKey: "test-key",
+it("uses Claude credentials and model instead of compatible-provider settings", async () => {
+  vi.stubEnv("AI_PROVIDER", "claude");
+  vi.stubEnv("ANTHROPIC_API_KEY", "test-anthropic-key");
+  vi.stubEnv("ANTHROPIC_MODEL", "claude-haiku-5-5");
+  vi.stubEnv("AI_API_KEY", "unused-compatible-key");
+  vi.stubEnv("AI_MODEL", "unused-compatible-model");
+  const factory = vi.fn<ModelFactory>(() => ({
+    async invoke() {
+      return new AIMessage(JSON.stringify({ answer: "Ready.", itemIds: [] }));
+    },
+  }));
+  const provider = configuredProvider(factory);
+  await expect(
+    provider!.answer({ question: "Find a jacket", items: [] }),
+  ).resolves.toEqual({ answer: "Ready.", itemIds: [] });
+  expect(factory).toHaveBeenCalledExactlyOnceWith({
+    provider: "claude",
+    model: "claude-haiku-5-5",
+    apiKey: "test-anthropic-key",
     maxRetries: 0,
+    maxTokens: 2400,
+    timeout: 20_000,
   });
+});
+
+it("does not initialize a model for an unsupported provider", () => {
+  vi.stubEnv("AI_PROVIDER", "unsupported");
+  const factory = vi.fn<ModelFactory>();
+  expect(configuredProvider(factory)).toBeUndefined();
+  expect(factory).not.toHaveBeenCalled();
 });

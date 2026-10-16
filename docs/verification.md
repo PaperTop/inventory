@@ -56,7 +56,7 @@ Hosted saved-data verification is blocked on the designated target, disposable a
 - Live browser verification with bundled sample records and a synthetic tent: Jarvis created an item, renamed it, added a tag, opened its details, and used the new item in a camping answer.
 - Focused Jarvis input inspected in the browser: computed outline and box shadow are both `none`.
 - Regression coverage includes semantic demo retrieval, bounded tool loops, unknown citations, create/edit argument validation, packing-list revisions, version conflicts, storage-source transitions, full-description preservation, saved API success/failure, and partially completed saved batches.
-- The native Google adapter successfully completed a synthetic model/tool round trip. Hosted Supabase remains unconfigured and has not been live-tested. Local sample items and chat are session-only.
+- The previous provider adapter successfully completed a synthetic model/tool round trip before its removal. This does not verify the current Claude configuration; live verification awaits an Anthropic key. Hosted Supabase remains unconfigured and has not been live-tested. Local sample items and chat are session-only.
 - A further live camera-accessory query was blocked by automatic approval review because it classified the inventory payload as private. Camera and accessory retrieval were verified through local automated tests instead; no alternate external submission was made.
 - Item IDs are validated against retrieved records. Model-written prose can still misstate details; the clickable inventory cards show the source records.
 
