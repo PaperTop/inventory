@@ -3,6 +3,7 @@ import type { InventoryFact } from "../src/lib/ask";
 import { configuredProvider } from "../src/lib/provider";
 import { askInventory } from "../src/lib/ask";
 import { searchFacts } from "../src/lib/inventory-search";
+import { failureReason } from "../src/lib/jarvis-diagnostics";
 
 it
   .skipIf(!process.env.JARVIS_LIVE_TEST)
@@ -99,14 +100,8 @@ it.skipIf(!process.env.JARVIS_LIVE_TEST)(
       });
       expect(result).toMatchObject({ itemIds: ["synthetic-test-1"] });
     } catch (error) {
-      const e = error as Error & { status?: number };
-      const message = e.message.replaceAll(
-        process.env.AI_API_KEY || "[no key]",
-        "[REDACTED]",
-      );
-      throw new Error(
-        JSON.stringify({ name: e.name, status: e.status, message }),
-      );
+      // Report only a fixed reason code, never raw messages or provider credentials.
+      throw new Error(`Live model check failed: ${failureReason(error)}`);
     }
   },
   30000,

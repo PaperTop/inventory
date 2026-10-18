@@ -12,7 +12,7 @@ const {
 } = process.env;
 if (!url || !key || !email || !password || !otherEmail || !otherPassword)
   throw new Error(
-    "Configure Supabase and two disposable confirmed accounts: SMOKE_EMAIL/SMOKE_PASSWORD and SMOKE_OTHER_EMAIL/SMOKE_OTHER_PASSWORD.",
+    "Configure Supabase in .env.local and two disposable confirmed accounts in .env.smoke.local: SMOKE_EMAIL/SMOKE_PASSWORD and SMOKE_OTHER_EMAIL/SMOKE_OTHER_PASSWORD (see .env.smoke.example).",
   );
 
 const newClient = () =>

@@ -14,8 +14,8 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "check": "npm run lint && npm run typecheck && npm test",
-    "test:supabase": "node --env-file=.env.local scripts/smoke-supabase.mjs",
-    "test:photos": "node --env-file=.env.local scripts/smoke-photos.mjs",
+    "test:supabase": "node --env-file=.env.local --env-file=.env.smoke.local scripts/smoke-supabase.mjs",
+    "test:photos": "node --env-file=.env.local --env-file=.env.smoke.local scripts/smoke-photos.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "release:check": "npm run format:check && npm run check && npm run build"

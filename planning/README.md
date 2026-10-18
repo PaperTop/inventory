@@ -372,28 +372,17 @@ Open `http://localhost:3000`.
 ### Supabase setup
 
 1. Create or start a Supabase project.
-2. Apply `supabase/migrations/202609130001_inventory.sql`.
-3. Copy `.env.example` to `.env.local`.
+2. Apply pending migrations in filename order after reviewing the database's migration history; see the [current setup guide](../README.md#set-up-saved-inventory).
+3. Copy `.env.example` to `.env.local` only if it does not already exist.
 4. Set the public Supabase URL and publishable key.
 5. Configure the Auth site URL and `/auth/confirm` redirect.
 6. Run the app and create an account.
 
 Never add a service-role key to browser or Vercel client variables.
 
-### Optional local model
+### Model and environment configuration
 
-```sh
-ollama pull qwen3:8b
-```
-
-```dotenv
-AI_PROVIDER=openai-compatible
-AI_BASE_URL=http://127.0.0.1:11434/v1
-AI_MODEL=qwen3:8b
-AI_API_KEY=
-```
-
-The exact model license must be checked before commercial distribution. The app does not download or bundle model weights.
+Use the [current README configuration guide](../README.md#model-configuration-and-privacy) as the single setup reference. The app template selects Claude Haiku 5.5; optional Ollama-compatible inference remains supported. Disposable integration-test credentials have a separate `.env.smoke.example` template and must not be added to production hosting settings. Never commit configured local environment files.
 
 ### Vercel
 

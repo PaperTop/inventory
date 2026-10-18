@@ -83,7 +83,7 @@ it.each(["development", "production"])(
       expect(provider.answer).not.toHaveBeenCalled();
       expect(log).toHaveTextContent(/Search results/);
       expect(log).toHaveTextContent(
-        /could not reach the AI service.*local search results/i,
+        /AI is disabled for this deployed sample inventory/i,
       );
       await user.type(
         screen.getByRole("textbox", { name: "Ask Jarvis" }),
@@ -142,4 +142,65 @@ it("a production-disabled demo endpoint still shows a greeting without irrelevan
   expect(within(log).queryByRole("button", { name: /^Open / })).toBeNull();
   expect(log).not.toHaveTextContent(/could not reach|Trip questions|To tailor/);
   expect(provider.answer).not.toHaveBeenCalled();
+});
+
+it("bounds a long fallback answer in history so the next request still reaches AI", async () => {
+  vi.stubEnv("NODE_ENV", "development");
+  const rows = Array.from({ length: 20 }, (_, index) => ({
+    ...camera,
+    id: `camera-${index}`,
+    name: `Camera ${index} ${"x".repeat(80)}`,
+    location_name: `Test shelf ${"y".repeat(180)}`,
+  }));
+  const provider = {
+    answer: vi.fn(async () => ({
+      answer: "AI follow-up succeeded.",
+      itemIds: [],
+    })),
+  };
+  let calls = 0;
+  const fetcher = vi.fn(async (_path: string, options: RequestInit) => {
+    const request = new Request("http://localhost:3000/api/ask/local", {
+      method: "POST",
+      headers: {
+        origin: "http://localhost:3000",
+        "content-type": "application/json",
+      },
+      body: options.body,
+    });
+    const response = await handleLocalAsk(
+      request,
+      ++calls === 1 ? undefined : provider,
+    );
+    if (calls === 1)
+      expect((await response.clone().json()).answer.length).toBeGreaterThan(
+        4000,
+      );
+    return response;
+  });
+  vi.stubGlobal("fetch", fetcher);
+  render(
+    <JarvisChat
+      items={rows}
+      saved={false}
+      onSelect={vi.fn()}
+      onApplyChanges={vi.fn(async () => ({ items: [], summary: "" }))}
+    />,
+  );
+  const user = userEvent.setup();
+  await user.type(
+    screen.getByRole("textbox", { name: "Ask Jarvis" }),
+    "Find camera{Enter}",
+  );
+  await screen.findByText(/AI is not configured/);
+  await user.type(
+    screen.getByRole("textbox", { name: "Ask Jarvis" }),
+    "What else?{Enter}",
+  );
+  expect(await screen.findByText("AI follow-up succeeded.")).toBeVisible();
+  expect(
+    JSON.parse(fetcher.mock.calls[1][1].body as string).history[0].answer
+      .length,
+  ).toBeLessThanOrEqual(4000);
+  expect(provider.answer).toHaveBeenCalledOnce();
 });

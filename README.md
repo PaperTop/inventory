@@ -70,10 +70,9 @@ Open [127.0.0.1:3000](http://127.0.0.1:3000). No Supabase or model credentials a
    ```dotenv
    NEXT_PUBLIC_SUPABASE_URL=your-project-api-url
    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-public-publishable-key
-   AI_PROVIDER=search
    ```
 
-   Use the public publishable key (or legacy anon key), never a service-role or secret key. Keep `.env.local` out of version control.
+   Use the public publishable key (or legacy anon key), never a service-role or secret key. Keep `.env.local` out of version control. The template selects Claude; configure its key as described below, or set `AI_PROVIDER=search` to explicitly disable inference.
 
 3. In Supabase Auth, set the Site URL to `http://127.0.0.1:3000` and allow `http://127.0.0.1:3000/auth/confirm`. Use the same hostname consistently. If email confirmation is enabled, set the confirmation email link to:
 
@@ -189,6 +188,8 @@ ANTHROPIC_API_KEY=
 
 Paste your Anthropic API key after the final `=`. For deployment, configure these same Claude variables in your hosting environment; local settings are not uploaded.
 
+For a Claude deployment, the five variables in [.env.example](.env.example) are the app configuration. Remove obsolete `AI_API_KEY`, `AI_BASE_URL` and `AI_MODEL` values left from another provider; Claude does not use them. Keep them only when deliberately selecting `openai-compatible` below. Do not add `SMOKE_*` test credentials to hosting settings. Restart locally or redeploy after changing environment variables. Keep real `.env` files and API keys out of commits and screenshots.
+
 | `AI_PROVIDER`       | Required settings                                                                  |
 | ------------------- | ---------------------------------------------------------------------------------- |
 | `search`            | None; no inference                                                                 |
@@ -235,7 +236,7 @@ npm run check         # lint, typecheck and tests without the production build
 npm run build         # production compilation and route generation
 ```
 
-Database tests use embedded PostgreSQL (PGlite), not a hosted Supabase project. For explicitly designated disposable test accounts, `.env.example` documents the smoke credentials:
+Database tests use embedded PostgreSQL (PGlite), not a hosted Supabase project. Only if running the hosted integration checks, copy [.env.smoke.example](.env.smoke.example) to `.env.smoke.local` and enter explicitly designated disposable test-account credentials. If your existing `.env.local` contains `SMOKE_*`, move those values to `.env.smoke.local`; do not replace the file's Supabase or Claude settings. Both local files are ignored by Git. The commands load app settings from `.env.local` and test credentials from `.env.smoke.local`:
 
 ```sh
 npm run test:supabase # one account; temporary records are created and deleted

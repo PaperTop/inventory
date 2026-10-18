@@ -1,5 +1,17 @@
 # Jarvis reliability investigation — 2026-10-15
 
+## Follow-up reliability fixes — 2026-10-18
+
+Three live requests with sixteen fabricated records and realistic-length IDs (Tahoe camping, photography accessories, hotel-trip essentials) all returned validated AI answers before these changes: 10.5s, 5.4s and 6.6s. This small baseline does not reproduce or explain the user's reported frequency; the failing environment/warning is still needed to distinguish provider, deployment and application failures. The fixture is retained as an opt-in test, `JARVIS_FALLBACK_SAMPLE=1` in `tests/jarvis-fallback-live.test.ts`; it is not run by the normal test suite.
+
+A controlled real-handler → chat regression did reproduce a separate failure: deterministic fallback can exceed 4,000 characters, but chat sent the entire answer back in history. The next request failed the server history schema, then failed the same schema in browser fallback and left the chat busy. Outgoing history now fits the existing limit with an explicit shortening marker; the original displayed answer and server input validation are unchanged.
+
+Malformed JSON or answer-schema failures now receive one format-only correction if a model turn remains. It uses the existing 25-second/four-call budget, has no tool access and cannot repeat prepared changes. A second invalid answer, fourth-turn invalid answer, refusal, truncation, provider error or invented citation still fails honestly; no network retries or inventory validation bypass were added.
+
+The client also preserves HTTP status and distinguishes production-disabled sample AI, sign-in failures and unavailable server setup from generic network failures. The production sample restriction is unchanged; this does not enable anonymous paid inference. No deployment, database write or private-inventory measurement was performed.
+
+Verification: the full release check passed (348 tests, 8 opt-in skips, formatting, lint, TypeScript and production build). The same three live fixtures passed after the changes at 11.0s, 4.2s and 9.0s. The hotel-trip run exercised format correction: its second invocation returned no tools but invalid answer JSON/schema, and the third returned a validated final answer. Six user-level live fixture requests were measured in total, before and after; individual requests can use up to four model invocations. These observations do not establish a production reliability percentage.
+
 ## Claude compatibility follow-up — 2026-10-16
 
 A native-adapter regression reproduced valid Claude thinking/text content blocks being rejected as `answer_schema`, causing deterministic fallback. The graph now extracts only explicit text blocks for JSON validation, never thinking or arbitrary rich content. Original signed blocks remain intact in tool history; turn reminders are appended rather than rewriting the system prompt. Claude's `stop_reason: max_tokens` is recognized as truncation, and refusals remain failures rather than invented answers.

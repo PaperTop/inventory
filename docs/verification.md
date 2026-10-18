@@ -1,5 +1,7 @@
 # Verification record
 
+This is a dated evidence log, not the current environment setup guide. Historical provider selections and configuration-presence observations below describe those runs only. For current Claude settings and separate test credentials, use the [README setup guide](../README.md#model-configuration-and-privacy), [.env.example](../.env.example) and [.env.smoke.example](../.env.smoke.example).
+
 ## Saved-data readiness and refinement plan — 2026-10-14
 
 - Local configuration has a hosted Supabase URL/public key and a Google provider configured. Values were inspected only for presence/type, never printed. Neither disposable smoke-account pair is configured; there is no confirmed staging designation, local Vercel linkage, Vercel CLI, Supabase CLI, or hosting token available.

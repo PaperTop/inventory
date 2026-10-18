@@ -15,7 +15,7 @@ import {
 } from "@phosphor-icons/react";
 import { askInventory, inventoryFacts, type AskResult } from "@/lib/ask";
 import { searchFacts } from "@/lib/inventory-search";
-import { askApi, askLocalApi } from "@/lib/browser-api";
+import { ApiError, askApi, askLocalApi } from "@/lib/browser-api";
 import type { VisualItem } from "./use-inventory-store";
 import type { ChangeOutcome, InventoryChange } from "@/lib/inventory-changes";
 import styles from "./inventory-dashboard.module.css";
@@ -114,7 +114,10 @@ export function JarvisChat({
       .slice(-6)
       .map((turn) => ({
         question: turn.question,
-        answer: turn.result!.answer,
+        answer:
+          turn.result!.answer.length <= 4000
+            ? turn.result!.answer
+            : `${turn.result!.answer.slice(0, 3950)}\n[Previous answer shortened for context.]`,
       }));
     const facts = inventoryFacts(items);
     const versions = Object.fromEntries(
@@ -129,7 +132,7 @@ export function JarvisChat({
       result = saved
         ? await askApi(question, history)
         : await askLocalApi(question, facts, history, locations);
-    } catch {
+    } catch (error) {
       result = await askInventory(
         question,
         {
@@ -140,7 +143,15 @@ export function JarvisChat({
       );
       if (!result.clarification && !result.conversational)
         result.notice =
-          "Jarvis could not reach the AI service. Showing local search results using your conversation context.";
+          error instanceof ApiError &&
+          error.status === 404 &&
+          error.message === "Local Jarvis is available in development only."
+            ? "AI is disabled for this deployed sample inventory. Run locally or sign in to use configured AI with saved inventory. Showing local search results using your conversation context."
+            : error instanceof ApiError && error.status === 401
+              ? "Your session has expired or you are signed out. Sign in to use AI with saved inventory. Showing local search results."
+              : error instanceof ApiError && error.status === 503
+                ? "The server is not configured or is temporarily unavailable. Check the hosting settings. Showing local search results."
+                : "Jarvis could not reach the AI service. Showing local search results using your conversation context.";
     }
     if (!mounted.current) return;
     if (result.changes?.length) {

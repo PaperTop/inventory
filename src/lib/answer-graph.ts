@@ -79,6 +79,7 @@ const AnswerState = Annotation.Root({
   messages: Annotation<BaseMessage[]>(),
   reader: Annotation<InventoryReader>(),
   calls: Annotation<number>(),
+  repairing: Annotation<boolean>(),
   signal: Annotation<AbortSignal>(),
   result: Annotation<z.output<typeof answerOutput>>(),
 });
@@ -131,7 +132,7 @@ export function createReadOnlyAnswerGraph(
       if (state.calls >= 4) throw new JarvisFailure("tool_budget");
       const started = performance.now();
       let response: AIMessage;
-      const finalAnswer = state.calls === 3;
+      const finalAnswer = state.calls === 3 || state.repairing;
       // Keep prior messages (including signed Claude thinking blocks) intact.
       // Changing the system prompt between tool rounds invalidates that context.
       const messages =
@@ -187,7 +188,7 @@ export function createReadOnlyAnswerGraph(
         throw new JarvisFailure("output_limit");
       if (finish === "refusal") throw new JarvisFailure("refusal");
       if (response.tool_calls?.length) {
-        if (state.calls >= 3 || response.tool_calls.length > 4)
+        if (finalAnswer || response.tool_calls.length > 4)
           throw new JarvisFailure("tool_budget");
         return {
           messages: [...messages, response],
@@ -206,16 +207,36 @@ export function createReadOnlyAnswerGraph(
           jsonString = objectMatch[0].trim();
         }
       }
-      let raw: unknown;
+      let parsed: z.output<typeof answerOutput>;
       try {
-        raw = JSON.parse(jsonString);
-      } catch {
-        throw new JarvisFailure("answer_json");
+        let raw: unknown;
+        try {
+          raw = JSON.parse(jsonString);
+        } catch {
+          throw new JarvisFailure("answer_json");
+        }
+        const output = answerOutput.safeParse(raw);
+        if (!output.success) throw new JarvisFailure("answer_schema");
+        parsed = output.data;
+      } catch (error) {
+        if (state.repairing || state.calls >= 3) throw error;
+        // One format correction, within the existing four-call/deadline budget.
+        // No tools are available during correction, so prepared changes cannot repeat.
+        return {
+          messages: [
+            ...messages,
+            response,
+            new HumanMessage(
+              "Your previous answer could not be validated. Return ONLY valid JSON with exactly two fields: answer (a nonempty string of at most 4000 characters) and itemIds (at most 20 exact IDs from retrieved current records). Do not add fields, invent possessions or IDs, repeat tools or claim changes were saved. Use a concise answer so the complete JSON fits.",
+            ),
+          ],
+          calls: state.calls + 1,
+          repairing: true,
+        };
       }
-      const parsed = answerOutput.safeParse(raw);
-      if (!parsed.success) throw new JarvisFailure("answer_schema");
       return {
-        result: parsed.data,
+        result: parsed,
+        repairing: false,
         messages: [...messages, response],
         calls: state.calls + 1,
       };
@@ -304,9 +325,11 @@ export function createReadOnlyAnswerGraph(
     })
     .addEdge(START, "generate_answer")
     .addConditionalEdges("generate_answer", (state) =>
-      (state.messages.at(-1) as AIMessage).tool_calls?.length
-        ? "search_inventory"
-        : END,
+      state.repairing
+        ? "generate_answer"
+        : (state.messages.at(-1) as AIMessage).tool_calls?.length
+          ? "search_inventory"
+          : END,
     )
     .addEdge("search_inventory", "generate_answer")
     .compile();
@@ -338,6 +361,7 @@ export function createReadOnlyAnswerGraph(
           ],
           reader: effectiveReader,
           calls: 0,
+          repairing: false,
           signal,
         },
         { recursionLimit: 10, signal },

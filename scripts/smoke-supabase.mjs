@@ -9,7 +9,7 @@ const {
 } = process.env;
 if (!url || !key || !email || !password)
   throw new Error(
-    "Configure Supabase URL/public key and a disposable confirmed SMOKE_EMAIL/SMOKE_PASSWORD in .env.local.",
+    "Configure Supabase URL/public key in .env.local and a disposable confirmed SMOKE_EMAIL/SMOKE_PASSWORD in .env.smoke.local (see .env.smoke.example).",
   );
 const client = createClient(url, key, {
   auth: { persistSession: false, autoRefreshToken: false },
