@@ -1,6 +1,13 @@
 import { createHash } from "node:crypto";
 import { HttpError } from "./http";
 
+export const DEMO_AI_LIMITS = {
+  requestsPerClient: 20,
+  clientWindowMs: 600_000,
+  requestsPerHour: 120,
+  concurrentRequests: 4,
+} as const;
+
 // Best-effort, per-process protection only. Serverless replicas/cold starts do
 // not share this state; provider spending limits / edge rules are still needed.
 export function createDemoUsageGuard(now = Date.now) {
@@ -29,9 +36,9 @@ export function createDemoUsageGuard(now = Date.now) {
     const key = createHash("sha256").update(address).digest("hex");
     const client = clients.get(key);
     if (
-      active >= 2 ||
-      hourlyRequests >= 60 ||
-      (client?.count ?? 0) >= 6 ||
+      active >= DEMO_AI_LIMITS.concurrentRequests ||
+      hourlyRequests >= DEMO_AI_LIMITS.requestsPerHour ||
+      (client?.count ?? 0) >= DEMO_AI_LIMITS.requestsPerClient ||
       (!client && clients.size >= 1000)
     )
       throw new HttpError(
@@ -40,7 +47,7 @@ export function createDemoUsageGuard(now = Date.now) {
       );
     clients.set(key, {
       count: (client?.count ?? 0) + 1,
-      expires: client?.expires ?? time + 600_000,
+      expires: client?.expires ?? time + DEMO_AI_LIMITS.clientWindowMs,
     });
     hourlyRequests++;
     active++;

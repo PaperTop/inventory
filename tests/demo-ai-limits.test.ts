@@ -11,7 +11,7 @@ it("bounds per-client usage and resets after the window", () => {
   vi.stubEnv("VERCEL", "1");
   let time = 0;
   const acquire = createDemoUsageGuard(() => time);
-  for (let i = 0; i < 6; i++) acquire(request())();
+  for (let i = 0; i < 20; i++) acquire(request())();
   expect(() => acquire(request())).toThrow(/usage limit/);
   expect(() => acquire(request("192.0.2.2"))()).not.toThrow();
   time = 600001;
@@ -22,20 +22,24 @@ it("bounds concurrent work and releases a slot only once", () => {
   const acquire = createDemoUsageGuard();
   const first = acquire(request());
   const second = acquire(request());
+  const third = acquire(request());
+  const fourth = acquire(request());
   expect(() => acquire(request())).toThrow(/usage limit/);
   first();
   first();
-  const third = acquire(request());
+  const replacement = acquire(request());
   expect(() => acquire(request())).toThrow(/usage limit/);
   second();
   third();
+  fourth();
+  replacement();
 });
 
 it("bounds hourly requests across clients, not just individual addresses", () => {
   vi.stubEnv("VERCEL", "1");
   let time = 0;
   const acquire = createDemoUsageGuard(() => time);
-  for (let i = 0; i < 60; i++) acquire(request(`192.0.2.${i}`))();
+  for (let i = 0; i < 120; i++) acquire(request(`192.0.2.${i}`))();
   expect(() => acquire(request("new-client"))).toThrow(/usage limit/);
   time = 3600001;
   expect(() => acquire(request())()).not.toThrow();
@@ -44,6 +48,6 @@ it("bounds hourly requests across clients, not just individual addresses", () =>
 it("does not trust forwarded identities outside Vercel", () => {
   vi.stubEnv("VERCEL", "");
   const acquire = createDemoUsageGuard();
-  for (let i = 0; i < 6; i++) acquire(request(`spoof-${i}`))();
+  for (let i = 0; i < 20; i++) acquire(request(`spoof-${i}`))();
   expect(() => acquire(request("another-spoof"))).toThrow(/usage limit/);
 });
