@@ -1,5 +1,11 @@
 # Jarvis demo parity diagnosis
 
+## Production demo enablement — 2026-10-18
+
+At the user's explicit request, the production demo now allows model-backed answers from bounded session snapshots without Supabase or sign-in. `/api/ask/local` retains same-origin checks and full answer/citation validation, caps production input at 200 items / 100 locations / 128 KB, and uses a best-effort per-process rate/concurrency guard. It has no database repository or credential response fields. Local edits stay session-only; authenticated `/api/ask` is unchanged.
+
+Limits: six requests per client per ten minutes, sixty per hour per process, two concurrent. Vercel's platform-supplied forwarding header identifies clients; non-Vercel hosts share one conservative bucket. These counters are not shared across serverless replicas or cold starts and are not a hard billing cap. Provider spending limits and hosting firewall rules remain deployment-owner responsibilities. `DEMO_AI_ENABLED=false` is an optional emergency disable switch. The earlier observations below describe the old production-disabled endpoint and are retained as historical evidence, not the current implementation.
+
 ## Confirmed findings
 
 The user's example was “hi” producing shoes and a hoodie. Controlled runs of `0699b03` (before trip clarification) and `7228676` (with clarification), with identical synthetic inventory and no provider, both reproduced it. This bug predates the clarification update: keyword matching treated `hi` as a substring of `Clothing` (and `White`), returning unrelated clothing records.

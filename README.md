@@ -125,22 +125,22 @@ The schema lives in [versioned SQL migrations](supabase/migrations/); [Zod domai
 
 Saved-inventory endpoints verify the Supabase session. JSON mutations require a matching Origin and `Content-Type: application/json`. Ownership is derived from the session, never accepted from a body. Personalized responses use `Cache-Control: private, no-store` and vary on the session cookie.
 
-| Method | Route                     | Request and response                                                                                                                                                   |
-| ------ | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/api/items?q=charger`    | `{ items, limit }`. Non-empty search is capped at 200; an empty query returns the complete hierarchy snapshot with `limit: null`.                                      |
-| POST   | `/api/items`              | Validated item fields → `{ item }`, `201`. Optional `X-Inventory-Request-Id` supports idempotent creation.                                                             |
-| PUT    | `/api/items/:id`          | Full editable item fields plus `version` → `{ item }`. This is not a partial patch.                                                                                    |
-| DELETE | `/api/items/:id`          | `{ version }` → `{ deleted: true }`; refuses stale or invalid deletion.                                                                                                |
-| GET    | `/api/locations`          | `{ locations }`, including Room parent IDs and location versions.                                                                                                      |
-| POST   | `/api/locations`          | `{ name, parent_location_id? }` → `{ location }`, `201`; omit/null parent for a Space. Supports the creation-request header.                                           |
-| PATCH  | `/api/locations`          | `{ id, name }` → `{ location }`. Renames an existing location without changing its hierarchy.                                                                          |
-| DELETE | `/api/locations`          | `{ id, destinationId }` → `{ deleted: true }`; destination may be null only when the domain rules allow it.                                                            |
-| POST   | `/api/ask`                | `{ question, history? }` → `{ answer, citations, mode, notice?, changes?, inventoryResult?, scopeChoices?, clarification?, contextNotice? }`.                          |
-| GET    | `/api/inventory/contents` | Query `type=location\|container\|all`, scope `id` when needed, optional `offset` and `revision` → a structured scope page.                                             |
-| GET    | `/api/dashboard`          | Per-user activity groups, summary and a grounded suggestion.                                                                                                           |
-| POST   | `/api/dashboard/visit`    | `{ asOf }` → `{ acknowledged: true }`; acknowledge only the exact successfully rendered briefing.                                                                      |
-| GET    | `/api/items/:id/photo`    | Authenticated ownership check → redirect to a temporary signed Storage URL.                                                                                            |
-| POST   | `/api/ask/local`          | Development-only, same-origin `{ question, history?, items, locations? }`; uses the supplied sample snapshot rather than a saved account. Returns `404` in production. |
+| Method | Route                     | Request and response                                                                                                                                                                                                           |
+| ------ | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| GET    | `/api/items?q=charger`    | `{ items, limit }`. Non-empty search is capped at 200; an empty query returns the complete hierarchy snapshot with `limit: null`.                                                                                              |
+| POST   | `/api/items`              | Validated item fields → `{ item }`, `201`. Optional `X-Inventory-Request-Id` supports idempotent creation.                                                                                                                     |
+| PUT    | `/api/items/:id`          | Full editable item fields plus `version` → `{ item }`. This is not a partial patch.                                                                                                                                            |
+| DELETE | `/api/items/:id`          | `{ version }` → `{ deleted: true }`; refuses stale or invalid deletion.                                                                                                                                                        |
+| GET    | `/api/locations`          | `{ locations }`, including Room parent IDs and location versions.                                                                                                                                                              |
+| POST   | `/api/locations`          | `{ name, parent_location_id? }` → `{ location }`, `201`; omit/null parent for a Space. Supports the creation-request header.                                                                                                   |
+| PATCH  | `/api/locations`          | `{ id, name }` → `{ location }`. Renames an existing location without changing its hierarchy.                                                                                                                                  |
+| DELETE | `/api/locations`          | `{ id, destinationId }` → `{ deleted: true }`; destination may be null only when the domain rules allow it.                                                                                                                    |
+| POST   | `/api/ask`                | `{ question, history? }` → `{ answer, citations, mode, notice?, changes?, inventoryResult?, scopeChoices?, clarification?, contextNotice? }`.                                                                                  |
+| GET    | `/api/inventory/contents` | Query `type=location\|container\|all`, scope `id` when needed, optional `offset` and `revision` → a structured scope page.                                                                                                     |
+| GET    | `/api/dashboard`          | Per-user activity groups, summary and a grounded suggestion.                                                                                                                                                                   |
+| POST   | `/api/dashboard/visit`    | `{ asOf }` → `{ acknowledged: true }`; acknowledge only the exact successfully rendered briefing.                                                                                                                              |
+| GET    | `/api/items/:id/photo`    | Authenticated ownership check → redirect to a temporary signed Storage URL.                                                                                                                                                    |
+| POST   | `/api/ask/local`          | Same-origin, session-only demo `{ question, history?, items, locations? }`; uses the supplied snapshot, never a saved account. Production accepts at most 200 items, 100 locations and 128 KB, with per-instance usage limits. |
 
 CRUD JSON bodies are bounded to 16,000 bytes. Ask accepts up to 128,000 bytes; the development snapshot endpoint accepts up to 8,000,000 bytes, 5,000 records and 1,000 locations. Questions are limited to 1,000 characters and history to six bounded exchanges. Limits apply to actual streamed bytes, not just the claimed Content-Length.
 
@@ -209,7 +209,9 @@ AI_API_KEY=
 
 For Claude, set `AI_PROVIDER=claude`, `ANTHROPIC_MODEL` and `ANTHROPIC_API_KEY`. No model is installed or downloaded by the app. Keep the license and hardware/service costs of the selected model separate from the open-source license of its adapter.
 
-Provider keys stay server-side. Hosted inference sends retrieved inventory facts and recent chat to that provider—even when the inventory itself is a local sample. Use local inference if those facts must stay on your machine. Sample-mode inference is development-only; production Jarvis uses authenticated saved inventory.
+Provider keys stay server-side. Hosted inference sends retrieved inventory facts and recent chat to that provider—even when the inventory itself is a sample. Use local inference if those facts must stay on your machine. Deployed sample AI is enabled when the server provider/model/key are configured; Supabase and sign-in are not required for the demo. Demo changes stay in the browser session, and `/api/ask` still requires authenticated saved inventory.
+
+Production demo requests require the same origin and pass stricter payload/schema checks. Best-effort per-process limits allow six requests per client per ten minutes, sixty requests per hour across clients, and two concurrent requests. Forwarded client identities are trusted only on Vercel; other hosts share one conservative client bucket. Counters reset across cold starts/replicas: these are not distributed quotas or a hard spending cap. Set provider-side spending limits and hosting firewall rules for a public rollout. Existing four-model-turn/25-second deadlines and zero network retries remain. Optional server setting `DEMO_AI_ENABLED=false` disables demo AI after redeployment without disabling saved-account AI; it is not needed to enable the demo.
 
 Provider errors or invalid answers fall back to labeled search results. Citations are checked, but model prose, suitability and completeness still need review. See [reliability and limits](docs/jarvis-reliability.md), [trip clarification](docs/jarvis-clarification.md), and [provider configuration](src/lib/provider.ts).
 
@@ -259,7 +261,7 @@ Do not run smoke writes against real-user accounts. Local checks do not establis
 - A deployed server cannot use Ollama at your laptop's `localhost`. Use a reachable inference endpoint or leave `AI_PROVIDER=search`.
 - Saved APIs verify the session and enforce owner-scoped access through PostgreSQL RLS. Edits use version checks; deletion is permanent. Use `disposed` if you want to keep a record.
 - Photos accept JPG, PNG and WebP up to 5 MB in a private Supabase bucket. Replaced, orphaned and deleted-item photos are retained; automatic cleanup is not implemented.
-- Model calls are bounded, but shared per-user quotas and provider spend limits are not implemented. Add them before exposing paid inference broadly.
+- Demo requests have best-effort per-instance throttling and concurrency limits. Distributed quotas and a hard spend cap are not implemented; use provider spending limits and hosting firewall protection before broad promotion.
 - Trip-context recognition uses conservative English-language rules and bounded session history. It is not a general travel planner or durable memory system.
 - Hosted verification remains deferred. Review the [setup and rollout prerequisites](docs/verification.md) rather than treating a successful build or push as a verified deployment.
 

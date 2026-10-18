@@ -143,15 +143,18 @@ export function JarvisChat({
       );
       if (!result.clarification && !result.conversational)
         result.notice =
-          error instanceof ApiError &&
-          error.status === 404 &&
-          error.message === "Local Jarvis is available in development only."
-            ? "AI is disabled for this deployed sample inventory. Run locally or sign in to use configured AI with saved inventory. Showing local search results using your conversation context."
+          error instanceof ApiError && error.status === 429
+            ? "Demo AI usage limit reached. Please wait before trying again. Showing local search results."
             : error instanceof ApiError && error.status === 401
               ? "Your session has expired or you are signed out. Sign in to use AI with saved inventory. Showing local search results."
-              : error instanceof ApiError && error.status === 503
-                ? "The server is not configured or is temporarily unavailable. Check the hosting settings. Showing local search results."
-                : "Jarvis could not reach the AI service. Showing local search results using your conversation context.";
+              : error instanceof ApiError &&
+                  error.status === 503 &&
+                  error.message ===
+                    "Demo AI has been disabled by the site owner."
+                ? "Demo AI is temporarily disabled by the site owner. Showing local search results."
+                : error instanceof ApiError && error.status === 503
+                  ? "The server is not configured or is temporarily unavailable. Check the hosting settings. Showing local search results."
+                  : "Jarvis could not reach the AI service. Showing local search results using your conversation context.";
     }
     if (!mounted.current) return;
     if (result.changes?.length) {

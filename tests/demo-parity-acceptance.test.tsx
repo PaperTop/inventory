@@ -73,36 +73,27 @@ it.each(["development", "production"])(
     expect(
       await within(log).findByRole("button", { name: "Open Synthetic camera" }),
     ).toBeEnabled();
-    if (environment === "development") {
-      expect(statuses).toEqual([200]);
-      expect(provider.answer).toHaveBeenCalledOnce();
-      expect(log).toHaveTextContent(/AI answer/);
-      expect(log).not.toHaveTextContent(/could not reach the AI service/);
-    } else {
-      expect(statuses).toEqual([404]);
-      expect(provider.answer).not.toHaveBeenCalled();
-      expect(log).toHaveTextContent(/Search results/);
-      expect(log).toHaveTextContent(
-        /AI is disabled for this deployed sample inventory/i,
-      );
-      await user.type(
-        screen.getByRole("textbox", { name: "Ask Jarvis" }),
-        "Where is the synthetic camera?{Enter}",
-      );
-      expect(
-        await within(log).findAllByRole("button", {
-          name: "Open Synthetic camera",
-        }),
-      ).toHaveLength(2);
-      const body = JSON.parse(fetcher.mock.calls[1][1].body as string);
-      expect(body.history).toEqual([{ question, answer: expect.any(String) }]);
-      expect(provider.answer).not.toHaveBeenCalled();
-    }
+    expect(statuses).toEqual([200]);
+    expect(provider.answer).toHaveBeenCalledOnce();
+    expect(log).toHaveTextContent(/AI answer/);
+    expect(log).not.toHaveTextContent(/could not reach the AI service/);
+    await user.type(
+      screen.getByRole("textbox", { name: "Ask Jarvis" }),
+      "Where is the synthetic camera?{Enter}",
+    );
+    expect(
+      await within(log).findAllByRole("button", {
+        name: "Open Synthetic camera",
+      }),
+    ).toHaveLength(2);
+    const body = JSON.parse(fetcher.mock.calls[1][1].body as string);
+    expect(body.history).toEqual([{ question, answer: expect.any(String) }]);
+    expect(provider.answer).toHaveBeenCalledTimes(2);
     expect(apply).not.toHaveBeenCalled();
   },
 );
 
-it("a production-disabled demo endpoint still shows a greeting without irrelevant cards, trip questions or an AI outage warning", async () => {
+it("a production demo greeting needs no model call, irrelevant cards or AI outage warning", async () => {
   vi.stubEnv("NODE_ENV", "production");
   const provider = {
     answer: vi.fn(async () => ({ answer: "Should not run", itemIds: [] })),

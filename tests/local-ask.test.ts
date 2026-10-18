@@ -75,12 +75,69 @@ it("accepts a same-origin loopback request when Next normalizes its internal URL
   req.headers.set("host", "127.0.0.1:3000");
   expect((await handleLocalAsk(req)).status).toBe(200);
 });
-it("disables unauthenticated local inference in production", async () => {
+it("enables bounded session-only demo inference in production", async () => {
+  vi.stubEnv("NODE_ENV", "production");
+  const provider = {
+    answer: vi.fn(async () => ({
+      answer: "Camera is in the drawer.",
+      itemIds: [camera.id],
+    })),
+  };
+  const response = await handleLocalAsk(
+    request({ question: "camera", items: [camera] }),
+    provider,
+  );
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({
+    mode: "ai",
+    citations: [camera],
+  });
+  expect(provider.answer).toHaveBeenCalledOnce();
+});
+it("does not invoke production demo AI without provider setup or when disabled", async () => {
   vi.stubEnv("NODE_ENV", "production");
   expect(
     (await handleLocalAsk(request({ question: "camera", items: [camera] })))
       .status,
-  ).toBe(404);
+  ).toBe(503);
+  const provider = { answer: vi.fn() };
+  vi.stubEnv("DEMO_AI_ENABLED", "false");
+  expect(
+    (
+      await handleLocalAsk(
+        request({ question: "camera", items: [camera] }),
+        provider,
+      )
+    ).status,
+  ).toBe(503);
+  expect(provider.answer).not.toHaveBeenCalled();
+});
+it("rejects oversized production demo snapshots before model execution", async () => {
+  vi.stubEnv("NODE_ENV", "production");
+  const provider = { answer: vi.fn() };
+  expect(
+    (
+      await handleLocalAsk(
+        request({
+          question: "camera",
+          items: Array.from({ length: 201 }, (_, i) => ({
+            ...camera,
+            id: String(i),
+          })),
+        }),
+        provider,
+      )
+    ).status,
+  ).toBe(400);
+  expect(
+    (
+      await handleLocalAsk(
+        request({ question: "x".repeat(128001), items: [] }),
+        provider,
+      )
+    ).status,
+  ).toBe(413);
+  expect(provider.answer).not.toHaveBeenCalled();
 });
 it.each([
   { question: "camera", items: [camera, camera] },

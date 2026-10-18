@@ -14,6 +14,7 @@ import {
   type Location,
 } from "./inventory";
 import { resolveHierarchy } from "./containers";
+import { acquireDemoUsage } from "./demo-ai-limits";
 import type { ActivityActor } from "./dashboard";
 import { inventoryContents, InventoryScopeChanged } from "./inventory-scope";
 import {
@@ -248,22 +249,27 @@ export function handleAsk(
   });
 }
 
-// Local snapshots have no account identity. Keep this model-backed demo off
-// production; /api/ask continues to require an authenticated repository.
+// Demo snapshots are session-only. This endpoint never receives a database
+// repository; saved inventory continues to require /api/ask authentication.
 export function handleLocalAsk(request: Request, provider?: AnswerProvider) {
   return safely(async () => {
-    if (process.env.NODE_ENV === "production")
-      throw new HttpError(
-        404,
-        "Local Jarvis is available in development only.",
-      );
+    if (request.method !== "POST")
+      throw new HttpError(405, "Method not allowed.");
     if (!isSameOrigin(request))
       throw new HttpError(403, "This request must come from the same site.");
+    const production = process.env.NODE_ENV === "production";
+    if (production && process.env.DEMO_AI_ENABLED === "false")
+      throw new HttpError(503, "Demo AI has been disabled by the site owner.");
+    if (production && !provider)
+      throw new HttpError(
+        503,
+        "Configure the server AI provider, model and API key to enable demo AI.",
+      );
     const { question, history, items, locations } = questionInput
       .extend({
         items: z
           .array(inventoryFactInput)
-          .max(5000)
+          .max(production ? 200 : 5000)
           .refine(
             (rows) => new Set(rows.map((row) => row.id)).size === rows.length,
             "Inventory IDs must be unique",
@@ -280,10 +286,10 @@ export function handleLocalAsk(request: Request, provider?: AnswerProvider) {
               })
               .strict(),
           )
-          .max(1000)
+          .max(production ? 100 : 1000)
           .default([]),
       })
-      .parse(await readBody(request, 8_000_000));
+      .parse(await readBody(request, production ? 128_000 : 8_000_000));
     const localItems: Item[] = items.map((item) => ({
       ...item,
       kind: item.kind ?? (item.quantity === 1 ? "durable" : "consumable"),
@@ -304,16 +310,21 @@ export function handleLocalAsk(request: Request, provider?: AnswerProvider) {
       items: resolveHierarchy(localItems, localLocations),
       locations: localLocations,
     };
-    return json(
-      await askInventory(
-        question,
-        {
-          snapshot: async () => snapshot,
-          search: async (query) => searchFacts(items, query),
-        },
-        provider,
-        history,
-      ),
-    );
+    const release = production ? acquireDemoUsage(request) : undefined;
+    try {
+      return json(
+        await askInventory(
+          question,
+          {
+            snapshot: async () => snapshot,
+            search: async (query) => searchFacts(items, query),
+          },
+          provider,
+          history,
+        ),
+      );
+    } finally {
+      release?.();
+    }
   });
 }
