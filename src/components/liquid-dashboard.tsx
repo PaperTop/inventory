@@ -780,10 +780,12 @@ export function LiquidDashboard({
   savedInventory,
   accountControls,
   accountEmail,
+  aiAvailable,
 }: {
   savedInventory?: SavedInventory;
   accountControls?: ReactNode;
   accountEmail?: string;
+  aiAvailable?: boolean;
 } = {}) {
   const storageMode = savedInventory ? "saved" : "sample";
   const [locations, setLocations] = useState<Location[]>(
@@ -2216,6 +2218,7 @@ export function LiquidDashboard({
               onAsk={(text) => askJarvis(text, true)}
               conversation={(suggestion) => (
                 <JarvisChat
+                  aiAvailable={aiAvailable}
                   promptRequest={promptRequest}
                   active={dashboardLanding && !detailsOpen && !mobileNav}
                   items={hierarchyItems}

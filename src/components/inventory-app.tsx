@@ -72,9 +72,11 @@ function AccountScreen({
 function SavedWorkspace({
   user,
   controls,
+  aiAvailable,
 }: {
   user: Account;
   controls: ReactNode;
+  aiAvailable?: boolean;
 }) {
   const [snapshot, setSnapshot] = useState<SavedInventory | null>(null);
   const [error, setError] = useState("");
@@ -133,6 +135,7 @@ function SavedWorkspace({
     );
   return (
     <LiquidDashboard
+      aiAvailable={aiAvailable}
       savedInventory={snapshot}
       accountControls={controls}
       accountEmail={user.email}
@@ -140,7 +143,9 @@ function SavedWorkspace({
   );
 }
 
-export function InventoryApp() {
+export function InventoryApp({
+  aiAvailable,
+}: { aiAvailable?: { saved: boolean; demo: boolean } } = {}) {
   const configured = isConfigured();
   const [user, setUser] = useState<Account | null | undefined>(
     configured ? undefined : null,
@@ -251,9 +256,18 @@ export function InventoryApp() {
           <p role="status">Checking your session…</p>
         </AccountScreen>
       ) : user ? (
-        <SavedWorkspace key={user.id} user={user} controls={controls} />
+        <SavedWorkspace
+          key={user.id}
+          user={user}
+          controls={controls}
+          aiAvailable={aiAvailable?.saved}
+        />
       ) : (
-        <LiquidDashboard key="sample" accountControls={controls} />
+        <LiquidDashboard
+          key="sample"
+          accountControls={controls}
+          aiAvailable={aiAvailable?.demo}
+        />
       )}
       {feedback && (
         <div

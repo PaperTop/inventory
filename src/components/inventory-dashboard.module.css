@@ -199,6 +199,16 @@ button.activityRow:hover {
   padding-top: 26px;
   border-top: 1px solid #23506d;
 }
+.assistantMode {
+  align-self: flex-start;
+  padding: 3px 9px;
+  border: 1px solid #34536b;
+  border-radius: 999px;
+  color: #c0d4e5;
+  background: #10283c;
+  font-size: 11px;
+  line-height: 1.5;
+}
 .assistantTitle {
   display: flex;
   align-items: center;

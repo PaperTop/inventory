@@ -1,0 +1,32 @@
+name: Deployed Jarvis smoke
+on:
+  deployment_status:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: jarvis-production-smoke
+  cancel-in-progress: false
+jobs:
+  smoke:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.deployment_status.state == 'success' &&
+      (github.event.deployment.production_environment == true ||
+      startsWith(github.event.deployment.environment, 'Production') ||
+      github.event.deployment.environment == 'production'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.deployment.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify the deployed release with synthetic inventory
+        env:
+          DEMO_URL: ${{ github.event.deployment_status.environment_url || vars.DEMO_URL || 'https://inventory-lime-one.vercel.app' }}
+          EXPECTED_RELEASE: ${{ github.event.deployment.sha || '' }}
+        run: node scripts/smoke-deployed.mjs

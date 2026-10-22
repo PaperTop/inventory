@@ -236,6 +236,7 @@ npm run release:check # formatting, lint, typecheck, tests and production build
 npm test              # local tests; live-provider tests are opt-in
 npm run check         # lint, typecheck and tests without the production build
 npm run build         # production compilation and route generation
+npm run test:deployed # live demo smoke; synthetic records, two AI requests, no DB writes
 ```
 
 Database tests use embedded PostgreSQL (PGlite), not a hosted Supabase project. Only if running the hosted integration checks, copy [.env.smoke.example](.env.smoke.example) to `.env.smoke.local` and enter explicitly designated disposable test-account credentials. If your existing `.env.local` contains `SMOKE_*`, move those values to `.env.smoke.local`; do not replace the file's Supabase or Claude settings. Both local files are ignored by Git. The commands load app settings from `.env.local` and test credentials from `.env.smoke.local`:
@@ -245,7 +246,15 @@ npm run test:supabase # one account; temporary records are created and deleted
 npm run test:photos   # two accounts; photo persistence and isolation checks
 ```
 
-Do not run smoke writes against real-user accounts. Local checks do not establish hosted Auth, persistence or cross-account behavior. Live-model evidence is limited, and the latest clarification flow has not been live-model tested. Detailed results are in [design-qa.md](design-qa.md).
+Do not run smoke writes against real-user accounts. Local checks do not establish hosted Auth, persistence or cross-account behavior. Live-model evidence uses small fabricated fixtures, not a production reliability estimate. Detailed results are in [design-qa.md](design-qa.md) and the [Jarvis reliability record](docs/jarvis-reliability.md).
+
+### Deployed Jarvis parity
+
+The composer shows **AI assistant** or **Basic search** from server-side capability settings before the first message. A fallback changes the indicator to Basic search; a subsequent AI answer restores it. Greetings, trip questions and exact location listings do not falsely imply an AI outage just because they need no model. Capability means configured, not a guarantee that the provider will accept every request. No keys or model inputs are exposed by the indicator or public `GET /api/ask/local` metadata; that endpoint returns only the demo mode and public release SHA.
+
+The [deployed smoke workflow](.github/workflows/deployed-smoke.yml) runs after successful production deployment events and can be run manually in GitHub Actions. It checks the deployment event's exact URL/SHA, a greeting without irrelevant cards, a complete nested-location query with more than twenty items, and an AI packing conversation plus exclusion follow-up. It makes four serial HTTP requests after one capability check; only the two packing requests invoke AI. It uses fabricated inventory, no credentials or cookies, no database writes, and no automatic model retries. HTTP checks do not replace browser/responsive/accessibility testing or saved-account migration checks.
+
+For a manual run, set `DEMO_URL` to the target HTTPS URL and optionally `EXPECTED_RELEASE` to its commit SHA, then run `npm run test:deployed`. Defaults target the public Inventory demo. In GitHub Actions, the Vercel deployment event supplies the target URL/SHA; `vars.DEMO_URL` is the fallback for manual runs. Vercel must expose `VERCEL_GIT_COMMIT_SHA` for exact-release verification. Preview deployments are not tested automatically, and protected URLs need separately approved access rather than a bypass token embedded in the script. See the [deployment parity checklist](docs/deployment-parity.md) for the saved-data rollout gate.
 
 ### What the checks establish
 

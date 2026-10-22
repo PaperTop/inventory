@@ -33,6 +33,7 @@ export function JarvisChat({
   active = true,
   children,
   locations = [],
+  aiAvailable,
 }: {
   items: VisualItem[];
   saved: boolean;
@@ -50,10 +51,22 @@ export function JarvisChat({
   active?: boolean;
   children?: ReactNode;
   locations?: Location[];
+  aiAvailable?: boolean;
 }) {
   const [prompt, setPrompt] = useState("");
   const [exchanges, setExchanges] = useState<Exchange[]>([]);
   const [busy, setBusy] = useState(false);
+  const latest = exchanges.at(-1)?.result;
+  const hasAiResponse = exchanges.some((turn) => turn.result?.mode === "ai");
+  const basicSearch =
+    (aiAvailable === false && !hasAiResponse) ||
+    Boolean(
+      latest?.mode === "search" &&
+      latest.notice &&
+      !latest.conversational &&
+      !latest.clarification,
+    );
+  const aiMode = !basicSearch && (aiAvailable === true || hasAiResponse);
   const sending = useRef(false);
   const mounted = useRef(false);
   useEffect(() => {
@@ -212,6 +225,24 @@ export function JarvisChat({
   return (
     <form className={styles.assistant} aria-label="Jarvis" onSubmit={ask}>
       {children}
+      <span
+        className={styles.assistantMode}
+        role="status"
+        aria-label="Jarvis operating mode"
+        title={
+          basicSearch
+            ? "Basic inventory search is in use. See any warning below for details."
+            : aiMode
+              ? "AI is configured. Greetings and exact location listings can be answered without a model call; failed AI requests may fall back to search."
+              : "The mode will be confirmed after a request."
+        }
+      >
+        {basicSearch
+          ? "Basic search"
+          : aiMode
+            ? "AI assistant"
+            : "Mode not checked"}
+      </span>
       {exchanges.length > 0 && (
         <div className={styles.assistantHeader}>
           <div className={styles.assistantTitle}>

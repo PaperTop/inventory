@@ -70,9 +70,7 @@ const createLangChainModel: ModelFactory = (configuration) => {
   };
 };
 
-export function configuredProvider(
-  modelFactory: ModelFactory = createLangChainModel,
-): AnswerProvider | undefined {
+function providerConfiguration(): ModelConfiguration | undefined {
   const choice = process.env.AI_PROVIDER;
 
   if (choice === "openai-compatible") {
@@ -80,15 +78,13 @@ export function configuredProvider(
     const model = process.env.AI_MODEL;
     if (!baseURL || !model) return undefined;
 
-    return createReadOnlyAnswerGraph(
-      modelFactory({
-        provider: "openai-compatible",
-        model,
-        baseURL,
-        apiKey: process.env.AI_API_KEY || undefined,
-        ...MODEL_LIMITS,
-      }),
-    );
+    return {
+      provider: "openai-compatible",
+      model,
+      baseURL,
+      apiKey: process.env.AI_API_KEY || undefined,
+      ...MODEL_LIMITS,
+    };
   }
 
   if (choice === "claude") {
@@ -96,15 +92,35 @@ export function configuredProvider(
     const model = process.env.ANTHROPIC_MODEL;
     if (!apiKey || !model) return undefined;
 
-    return createReadOnlyAnswerGraph(
-      modelFactory({
-        provider: "claude",
-        model,
-        apiKey,
-        ...CLAUDE_LIMITS,
-      }),
-    );
+    return {
+      provider: "claude",
+      model,
+      apiKey,
+      ...CLAUDE_LIMITS,
+    };
   }
 
   return undefined;
+}
+
+export function jarvisAvailability() {
+  const saved = Boolean(providerConfiguration());
+  return {
+    saved,
+    demo:
+      saved &&
+      !(
+        process.env.NODE_ENV === "production" &&
+        process.env.DEMO_AI_ENABLED === "false"
+      ),
+  };
+}
+
+export function configuredProvider(
+  modelFactory: ModelFactory = createLangChainModel,
+): AnswerProvider | undefined {
+  const configuration = providerConfiguration();
+  return configuration
+    ? createReadOnlyAnswerGraph(modelFactory(configuration))
+    : undefined;
 }
