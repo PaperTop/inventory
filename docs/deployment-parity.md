@@ -12,7 +12,7 @@ The earlier “332 tests passed, still local” and “production demo route blo
 - Server-derived AI availability is shown in the composer. Basic-search fallback remains explicit, while greetings and complete scoped lists can deliberately avoid model inference.
 - `GET /api/ask/local` publishes only mode and release SHA with no-store headers; it is not an AI health call or a credentials endpoint.
 - Run the full local release gate before publishing.
-- After a successful production deployment, `.github/workflows/deployed-smoke.yml` tests the exact deployment URL and commit from the event. Manual runs use `DEMO_URL` and optional `EXPECTED_RELEASE`.
+- After a successful production deployment, `.github/workflows/deployed-smoke.yml` tests the public alias against the exact commit from the event. Manual runs use `DEMO_URL` and optional `EXPECTED_RELEASE`. The first deployed workflow found that Vercel's generated commit URL redirected to SSO (302), while the public alias returned 200; targeting the alias with a strict SHA check avoids that access mismatch without bypassing protection.
 - `scripts/smoke-deployed.mjs` checks greetings, all records in a nested location (beyond the twenty-card citation limit), and a two-turn packing conversation. It asserts AI mode for packing, grounding, no prepared writes, and a respected exclusion. Requests are serial and not automatically retried; only fabricated data is supplied.
 - This is HTTP behavior verification. Browser interactions and visual/accessibility QA remain separate checks. A passing tiny live sample is not a reliability percentage.
 

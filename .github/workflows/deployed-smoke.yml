@@ -27,6 +27,6 @@ jobs:
           node-version: 22
       - name: Verify the deployed release with synthetic inventory
         env:
-          DEMO_URL: ${{ github.event.deployment_status.environment_url || vars.DEMO_URL || 'https://inventory-lime-one.vercel.app' }}
+          DEMO_URL: ${{ vars.DEMO_URL || 'https://inventory-lime-one.vercel.app' }}
           EXPECTED_RELEASE: ${{ github.event.deployment.sha || '' }}
         run: node scripts/smoke-deployed.mjs
