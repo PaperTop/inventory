@@ -37,8 +37,15 @@ const createLangChainModel: ModelFactory = (configuration) => {
       model: configuration.model,
       apiKey: configuration.apiKey || "local-inference",
       temperature: 0,
+      ...(configuration.model === "gpt-6-luna"
+        ? {
+            modelKwargs: {
+              reasoning_effort: "none",
+              max_completion_tokens: configuration.maxTokens,
+            },
+          }
+        : { maxTokens: configuration.maxTokens }),
       maxRetries: configuration.maxRetries,
-      maxTokens: configuration.maxTokens,
       timeout: configuration.timeout,
       configuration: { baseURL: configuration.baseURL },
     });

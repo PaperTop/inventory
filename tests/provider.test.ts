@@ -6,7 +6,48 @@ import {
   type ModelFactory,
 } from "../src/lib/provider";
 
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+});
+
+it("sends Luna tool requests with the required reasoning and token settings", async () => {
+  vi.stubEnv("AI_PROVIDER", "openai-compatible");
+  vi.stubEnv("AI_BASE_URL", "https://api.openai.com/v1");
+  vi.stubEnv("AI_MODEL", "gpt-6-luna");
+  vi.stubEnv("AI_API_KEY", "test-key");
+  const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+    Response.json({
+      id: "test",
+      object: "chat.completion",
+      created: 1,
+      model: "gpt-6-luna",
+      choices: [
+        {
+          index: 0,
+          finish_reason: "stop",
+          message: {
+            role: "assistant",
+            content: JSON.stringify({ answer: "No items found.", itemIds: [] }),
+          },
+        },
+      ],
+    }),
+  );
+  vi.stubGlobal("fetch", fetch);
+  await configuredProvider()!.answer({
+    question: "What do I have?",
+    items: [],
+  });
+  const body = JSON.parse(String(fetch.mock.calls[0][1]?.body));
+  expect(body).toMatchObject({
+    model: "gpt-6-luna",
+    reasoning_effort: "none",
+    max_completion_tokens: 1200,
+  });
+  expect(body).not.toHaveProperty("max_tokens");
+  expect(body.tools).toBeDefined();
+});
 
 it("does not activate model inference by default", () => {
   vi.stubEnv("AI_PROVIDER", "search");
